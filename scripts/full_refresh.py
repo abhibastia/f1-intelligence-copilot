@@ -80,19 +80,22 @@ def stage_seed():
 
 
 def stage_cdf():
-    """Submitted rather than imported: the notebook needs a Spark session and a
-    Databricks runtime, neither of which exist in this process."""
-    payload = os.path.join(ROOT, "cdf_job.json")
-    subprocess.run(["databricks", "jobs", "submit", "--json", f"@{payload}",
+    """Runs on Databricks via the bundle - the notebook needs a Spark session
+    and a Databricks runtime, neither of which exist in this process. Assumes
+    `databricks bundle deploy` has already been run, and that
+    BUNDLE_VAR_warehouse_id is set (databricks.yml has no default for it - a
+    hardcoded warehouse id would silently target the wrong workspace on a
+    fork)."""
+    subprocess.run(["databricks", "bundle", "run", "f1_cdf_analytics", "-t", "dev",
                     "--profile", os.environ.get("DATABRICKS_CONFIG_PROFILE", "DEFAULT")],
                    check=True, cwd=ROOT)
 
 
 STAGES = [
     ("schema",  "create tables and indexes (idempotent)",        stage_schema, False),
-    ("harvest", "race reports, weather, pit stops -> Lakebase",  stage_harvest, False),
+    ("harvest", "Wikipedia race reports -> Lakebase",             stage_harvest, False),
     ("embed",   "chunk and embed new documents",                 stage_embed,  False),
-    ("seed",    "Delta Gold marts -> Lakebase",                  stage_seed,   True),
+    ("seed",    "weather, pit stops, Gold marts, stints -> Lakebase", stage_seed, True),
     ("cdf",     "tool calls -> Delta -> Change Data Feed",       stage_cdf,    True),
 ]
 

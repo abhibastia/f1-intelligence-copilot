@@ -102,7 +102,7 @@ flowchart TD
     classDef store fill:#1e3a5f,stroke:#3b82f6,color:#dbeafe
     classDef app fill:#14532d,stroke:#22c55e,color:#dcfce7
     class J,W,O api
-    class ING,MED,HAR,SEED job
+    class ING,MED,HAR,SEED,CDF job
     class VOL,GOLD,LB,DELTA store
     class MCP,UI,DASH,GENIE app
 ```
@@ -291,17 +291,17 @@ your own MCP app's URL and redeploy.
 
 ### Step 5 — Change Data Feed analytics
 
+Runs automatically as the last task of `f1_full_refresh` (Steps 2–3), or on
+its own:
+
 ```bash
-databricks workspace import /Workspace/Users/<you>/f1-intelligence-copilot/cdf_agent_analytics \
-  --file notebooks/cdf_agent_analytics.py --language PYTHON --format SOURCE \
-  --overwrite --profile <profile>
-databricks jobs submit --json @cdf_job.json --profile <profile>
+databricks bundle run f1_cdf_analytics -t dev --profile <profile>
 ```
 
-Edit `cdf_job.json`'s `notebook_path` to your own workspace user first. The
-bundle also defines this job (`resources/f1_jobs.yml`) but it fails
-reproducibly on serverless as a bundle-deployed task; `jobs submit` is the path
-that's actually verified — see that file's own status notes.
+`cdf_job.json` / `databricks jobs submit` is no longer needed — it existed
+because this notebook used to crash under `bundle run` specifically, which
+turned out to be the same `psycopg2` issue as Steps 2–3, fixed the same way.
+See `resources/f1_jobs.yml` for the full story if you're curious.
 
 ### Step 6 — Genie
 
@@ -419,12 +419,6 @@ streaming-compatible `agent_tool_calls` table.
   project's central finding, not a hidden flaw.
 - **`f1_race_weather` no longer carries `wind_gusts_max` or `temp_mean`.**
   `race_conditions` doesn't compute them at its grain.
-- **The CDF analytics job fails when launched from the bundle.**
-  `f1_cdf_analytics`'s notebook task succeeds via `databricks jobs submit` and
-  fails with "Fatal error: The Python kernel is unresponsive" when triggered
-  by `databricks bundle run` instead — same code, different trigger path. See
-  `resources/f1_jobs.yml` for the verified command. It runs on Databricks
-  either way; only the trigger mechanism is affected.
 - **Single user.** Writes are keyed `user_id='default'`.
 - **The access model cannot be demonstrated on a single-owner workspace.**
   Grants are applied and correct, but ownership outranks every one of them.

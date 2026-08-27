@@ -85,12 +85,33 @@ from both halves. `docs/architecture.md` is the pipeline design record;
     psycopg2-binary's bundled OpenSSL, worse on ARM64). It worked in local dev
     and in the Databricks Apps runtime, which is why it went undetected until
     `jobs/run_harvest.py` and `jobs/run_seed_gold.py` were actually run as
-    jobs — see `resources/f1_jobs.yml`. pg8000 is pure Python, so this class of
-    crash cannot recur. Two non-obvious API differences if you touch
+    jobs — see `resources/f1_jobs.yml`. The same crash also hit
+    `notebooks/cdf_agent_analytics.py` once it ran as a chained task instead of
+    a standalone `jobs submit` — it had been read as a *different*, unsolved
+    problem ("fails via bundle-run, works via jobs submit") for a while,
+    because nobody had actually opened the driver logs; it was the identical
+    `import psycopg2` frame. **If a Databricks job task dies with the generic
+    "Python process exited unexpectedly" or "kernel is unresponsive," check for
+    a bare `import psycopg2` before inventing a new theory** — that generic
+    message covers this crash and looks nothing like it. pg8000 is pure
+    Python, so this class of crash cannot recur; use it everywhere Lakebase is
+    reached, including inside notebooks (`%pip install pg8000`, not
+    `psycopg2-binary`). Two non-obvious API differences if you touch
     `f1lake/schema.py`: pg8000 cursors don't support the context-manager
     protocol (use `schema.cursor(conn)`, not `conn.cursor()`, in a `with`), and
     `cursor.execute(sql, None)` raises `TypeError: object of type 'NoneType'
     has no len()` — pass `()` for no parameters, not `None`.
+13. **`notebooks/cdf_agent_analytics.py` cannot hardcode `startingVersion=1`
+    forever.** Reading a Delta table's Change Data Feed from a fixed old
+    version fails once those files age past
+    `delta.deletedFileRetentionDuration` (168 hours) —
+    `DELTA_UNSUPPORTED_TIME_TRAVEL_BEYOND_DELETED_FILE_RETENTION_DURATION`, a
+    VACUUM boundary, not a CDF one. ADR-0008 flagged this as a live risk when
+    the table was designed; it has since happened. The notebook now catches
+    that specific error and falls back to the table's *current* version as a
+    fresh incremental starting point — the changes in an expired window are
+    physically gone, not recoverable, so failing the run over them buys
+    nothing.
 
 ## API conventions
 

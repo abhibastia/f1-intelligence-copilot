@@ -37,7 +37,14 @@
 # COMMAND ----------
 
 # DBTITLE 1,Install dependencies
-# MAGIC %pip install -q psycopg2-binary 'databricks-sdk>=0.30.0'
+# Pure-Python Postgres driver, not psycopg2-binary: the latter's bundled
+# OpenSSL/libpq SIGABRTs this kernel with "Fatal error: The Python kernel is
+# unresponsive" the moment `import psycopg2` runs, when this notebook executes
+# as a chained task (e.g. inside f1_full_refresh) rather than standalone via
+# `databricks jobs submit` - other native extensions (pandas, pyarrow, grpc)
+# are already loaded in the same process by then. See f1lake/schema.py for the
+# same fix applied to the harvest/seed_gold jobs, where it was first found.
+# MAGIC %pip install -q pg8000 'databricks-sdk>=0.30.0'
 
 # COMMAND ----------
 
@@ -66,6 +73,7 @@ print(f"analytics : {ANALYTICS}")
 
 # DBTITLE 1,Read the operational rows out of Lakebase
 import base64
+from urllib.parse import urlparse
 
 from databricks.sdk import WorkspaceClient
 
@@ -74,17 +82,27 @@ from databricks.sdk import WorkspaceClient
 _secret = WorkspaceClient().secrets.get_secret(scope=SCOPE, key=KEY)
 LAKEBASE_URL = base64.b64decode(_secret.value).decode("utf-8")
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from pg8000 import dbapi
 
-with psycopg2.connect(LAKEBASE_URL, cursor_factory=RealDictCursor) as conn:
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT id, called_at, session_id, tool_name, is_write,
-                   arguments::text AS arguments, outcome, summary, duration_ms
-            FROM agent_tool_calls ORDER BY id
-        """)
-        rows = [dict(r) for r in cur.fetchall()]
+_parsed = urlparse(LAKEBASE_URL)
+conn = dbapi.connect(
+    host=_parsed.hostname, port=_parsed.port or 5432,
+    database=_parsed.path.lstrip("/"), user=_parsed.username,
+    password=_parsed.password, ssl_context=True,
+)
+try:
+    # pg8000 cursors don't support the context-manager protocol.
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, called_at, session_id, tool_name, is_write,
+               arguments::text AS arguments, outcome, summary, duration_ms
+        FROM agent_tool_calls ORDER BY id
+    """, ())
+    columns = [d[0] for d in cur.description]
+    rows = [dict(zip(columns, r)) for r in cur.fetchall()]
+    cur.close()
+finally:
+    conn.close()
 
 print(f"{len(rows)} tool call(s) in Lakebase")
 
@@ -139,12 +157,39 @@ display(spark.sql(f"DESCRIBE DETAIL {RAW}").select("name", "properties"))
 
 # DBTITLE 1,Read the Change Data Feed and materialise analytics
 # Version 1 onward: version 0 is the CREATE TABLE, which has no data changes.
-changes = (
-    spark.read.format("delta")
-    .option("readChangeFeed", "true")
-    .option("startingVersion", 1)
-    .table(RAW)
-)
+#
+# That holds only while version 1's data files are still within
+# delta.deletedFileRetentionDuration (168 hours / 7 days by default). Past
+# that, Spark refuses with DELTA_UNSUPPORTED_TIME_TRAVEL_BEYOND_DELETED_FILE_
+# RETENTION_DURATION - not a CDF failure, a VACUUM one: the files needed to
+# reconstruct that old a version are gone, whether or not anything ever read
+# them. ADR-0008 flagged this as a live risk when it was written; this is that
+# risk landing, on a table old enough for its own history to have aged out.
+#
+# There is no way to recover the changes in the expired window - the files
+# are physically gone - so the fallback is to stop asking for them: fall back
+# to the table's current version, which makes this run (and every run after
+# it) a fresh incremental starting point rather than a failure.
+try:
+    changes = (
+        spark.read.format("delta")
+        .option("readChangeFeed", "true")
+        .option("startingVersion", 1)
+        .table(RAW)
+    )
+    changes.count()  # force evaluation now, so the fallback triggers here
+except Exception as exc:
+    if "DELETED_FILE_RETENTION_DURATION" not in str(exc):
+        raise
+    current_version = spark.sql(f"DESCRIBE HISTORY {RAW}").selectExpr("max(version)").first()[0]
+    print(f"startingVersion=1 is past retention; falling back to the current "
+          f"version ({current_version}) as the new incremental starting point.")
+    changes = (
+        spark.read.format("delta")
+        .option("readChangeFeed", "true")
+        .option("startingVersion", current_version)
+        .table(RAW)
+    )
 print(f"{changes.count()} change record(s) from the feed")
 display(changes.select("id", "tool_name", "outcome", "_change_type",
                        "_commit_version").orderBy("_commit_version", "id").limit(20))

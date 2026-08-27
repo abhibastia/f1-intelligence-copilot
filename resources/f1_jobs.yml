@@ -46,23 +46,27 @@
 #   harvest/laps.py fetching them a second time from Jolpica, and derives
 #   stints afterward - pure Lakebase computation, no network at all.
 #
-#   HOW TO RUN THE CDF JOB (read this before using the bundle definition):
-#     f1_cdf_analytics's notebook succeeds when submitted directly and fails
-#     reproducibly when launched from this bundle (or from f1_full_refresh,
-#     confirmed again in the same live run above) - "Fatal error: The Python
-#     kernel is unresponsive". The difference appears to be the bundle files
-#     directory it runs from, not the code, and it is unrelated to the
-#     psycopg2/pg8000 issue above (a different task, a different failure
-#     message). Until that is understood, the verified command is:
+#   `cdf_analytics` had the SAME psycopg2 crash, one file over. It had been
+#   read as a different, unsolved problem ("fails via bundle-run, works via
+#   jobs submit, difference appears to be the working directory") because it
+#   was never actually diagnosed - just observed to fail differently under two
+#   trigger paths and left there. The driver logs say otherwise: identical
+#   SIGABRT, identical `import psycopg2` frame, inside
+#   notebooks/cdf_agent_analytics.py this time. Fixed the same way - pg8000
+#   instead of psycopg2-binary.
 #
-#       databricks workspace import /Workspace/Users/<you>/f1-intelligence-copilot/cdf_agent_analytics \
-#         --file notebooks/cdf_agent_analytics.py --language PYTHON --format SOURCE --overwrite
-#       databricks jobs submit --json @cdf_job.json
+#   Clearing that exposed a second, unrelated issue: the notebook hardcoded
+#   `startingVersion=1` for the Change Data Feed read, which fails once
+#   version 1's files age past `delta.deletedFileRetentionDuration` (168
+#   hours) - a VACUUM boundary, not a CDF one, and exactly the risk ADR-0008
+#   flagged when this table was first designed. There is no recovering the
+#   changes in an expired window; the fix falls back to the table's current
+#   version as a fresh incremental starting point rather than failing the run.
 #
-#     The bundle definition is kept because it is the right shape and is what a
-#     reviewer should read; it is not what produced the analytics table. This
-#     job already runs entirely on Databricks either way - only the trigger
-#     mechanism (bundle-run vs. direct submit) differs.
+#   All four tasks - harvest, embed, seed_gold, cdf_analytics - now succeed
+#   together in one f1_full_refresh run, verified live, via
+#   `databricks bundle run f1_full_refresh`. No `jobs submit` workaround is
+#   needed any more.
 
 resources:
   jobs:

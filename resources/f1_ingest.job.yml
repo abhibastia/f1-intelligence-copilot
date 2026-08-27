@@ -1,0 +1,81 @@
+# Weekly ingestion, then a pipeline refresh.
+#
+# Tuesday 06:00 UTC: after every race weekend, before the next one. In the dev
+# target the bundle pauses this schedule automatically, so it will not consume
+# compute while you are iterating.
+#
+# The three tasks are ordered deliberately: ingest lands any new round in the
+# Volume, the pipeline picks it up, and validation proves the marts still
+# reconcile. Running the pipeline first would process nothing new.
+#
+# Validation is on the *scheduled* path, not just the manual one. Correctness
+# that is only ever checked when a human remembers to check it is not a
+# guarantee, and this is the run that happens 51 weeks out of 52.
+
+resources:
+  jobs:
+    f1_ingest_incremental:
+      name: f1_ingest_incremental
+
+      tasks:
+        - task_key: ingest
+          # The landing writer is idempotent — a retried run re-pulls only the
+          # open round — so retrying a transport failure is safe. Two retries
+          # covers a 429 storm or a dropped connection without turning a real
+          # outage into six wasted minutes.
+          max_retries: 2
+          min_retry_interval_millis: 60000
+          timeout_seconds: 2700
+          spark_python_task:
+            python_file: ../src/ingestion/ingest.py
+            # Incremental mode pulls only the live season, and the writer skips
+            # rounds that are already closed — roughly 8 API calls per run.
+            parameters:
+              - --mode
+              - incremental
+              - --root
+              - ${var.landing_root}
+          environment_key: serverless_default
+
+        - task_key: refresh_pipeline
+          depends_on:
+            - task_key: ingest
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.f1_medallion_pipeline.id}
+
+        # Same checks as the manual job. It runs on compute the pipeline task
+        # has already started, so the marginal cost is a handful of queries.
+        - task_key: validate
+          depends_on:
+            - task_key: refresh_pipeline
+          spark_python_task:
+            python_file: ../scripts/validate_marts.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+          environment_key: serverless_default
+          timeout_seconds: 900
+
+      environments:
+        - environment_key: serverless_default
+          spec:
+            client: "3"
+
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * TUE"
+        timezone_id: UTC
+
+      # A second concurrent run would re-pull the same open round for no gain.
+      max_concurrent_runs: 1
+
+      # Free Edition bills a daily compute allowance, not money. A task that
+      # hangs burns tomorrow's run as well as today's, and nothing says so —
+      # you find out when the next run also fails. An hour is roughly four
+      # times the observed end-to-end duration.
+      timeout_seconds: 3600
+
+      # The only channel out. Without it a Sunday-night failure is invisible
+      # until someone opens the dashboard and wonders why it stopped moving.
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}

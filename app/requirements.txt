@@ -1,0 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+flask>=3.0.0
+# agent.py posts to the serving endpoint directly. It currently arrives via
+# databricks-sdk, but an undeclared import is one dependency bump from breaking.
+requests>=2.31.0
+psycopg2-binary>=2.9.9
+databricks-sdk>=0.30.0
+sentence-transformers>=3.0.0

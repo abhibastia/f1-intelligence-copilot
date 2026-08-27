@@ -1,0 +1,3824 @@
+{
+  "datasets": [
+    {
+      "name": "ds_driver_race",
+      "displayName": "Driver x race",
+      "queryLines": [
+        "SELECT b.*,\n",
+        "       CASE WHEN b.dnf_flag                      THEN 'retired'\n",
+        "            WHEN b.quali_to_finish_delta >=  2   THEN 'made up places'\n",
+        "            WHEN b.quali_to_finish_delta <= -2   THEN 'lost places'\n",
+        "            ELSE 'held position' END AS form_verdict\n",
+        "FROM (\n",
+        "SELECT d.season, d.round, d.race_date, d.race_name,\n",
+        "       d.circuit_name, d.circuit_country,\n",
+        "       d.driver_name,\n",
+        "       d.constructor_name_as_of_race            AS team,\n",
+        "       d.grid_position, d.finish_position, d.positions_gained,\n",
+        "       d.quali_position, d.quali_stage_reached, d.quali_to_finish_delta,\n",
+        "       d.race_points, d.sprint_points, d.total_points,\n",
+        "       d.dnf_flag, d.status, d.is_win, d.is_podium, d.is_points_finish,\n",
+        "       p.pace_deficit_pct, p.consistency_s, p.laps_led, p.median_clean_lap_s,\n",
+        "       s.stops, s.stints, s.avg_service_stop_s, s.strategy_vs_field\n",
+        "FROM driver_performance d\n",
+        "LEFT JOIN lap_pace p\n",
+        "       ON p.season = d.season AND p.round = d.round AND p.driver_id = d.driver_id\n",
+        "LEFT JOIN race_strategy s\n",
+        "       ON s.season = d.season AND s.round = d.round AND s.driver_id = d.driver_id\n",
+        ") b\n"
+      ]
+    },
+    {
+      "name": "ds_driver_season",
+      "displayName": "Driver season form",
+      "queryLines": [
+        "-- Reads the governed metric view, not the marts. Every measure below has one\n",
+        "-- definition in sql/metrics/driver_performance_metrics.sql, so this dataset and\n",
+        "-- a Genie answer cannot drift apart.\n",
+        "WITH per_driver AS (\n",
+        "  SELECT `Season`                            AS season,\n",
+        "         `Driver`                            AS driver_name,\n",
+        "         `Team`                              AS team,\n",
+        "         MEASURE(`Starts`)                   AS races,\n",
+        "         MEASURE(`Total Points`)             AS points,\n",
+        "         MEASURE(`Wins`)                     AS wins,\n",
+        "         MEASURE(`Podiums`)                  AS podiums,\n",
+        "         ROUND(MEASURE(`Average Qualifying`), 2) AS avg_quali,\n",
+        "         ROUND(MEASURE(`Average Finish`), 2)     AS avg_finish,\n",
+        "         ROUND(MEASURE(`Places Made Up`), 2)     AS avg_places_made_up,\n",
+        "         ROUND(MEASURE(`Pace Deficit`), 3)       AS avg_pace_deficit_pct,\n",
+        "         ROUND(MEASURE(`Consistency`), 3)        AS avg_consistency_s,\n",
+        "         MEASURE(`Laps Led`)                 AS laps_led,\n",
+        "         MEASURE(`Retirements`)              AS dnfs,\n",
+        "         ROUND(MEASURE(`DNF Rate`), 1)       AS dnf_rate_pct\n",
+        "  FROM driver_metrics\n",
+        "  GROUP BY ALL\n",
+        "),\n",
+        "-- Team pace comes from the same view at team grain, so it stays race-weighted.\n",
+        "-- Averaging the driver averages would silently reweight it by driver count.\n",
+        "per_team AS (\n",
+        "  SELECT `Season` AS season, `Team` AS team,\n",
+        "         MEASURE(`Pace Deficit`) AS team_pace_deficit\n",
+        "  FROM driver_metrics\n",
+        "  GROUP BY ALL\n",
+        ")\n",
+        "SELECT d.*,\n",
+        "       ROUND(d.avg_pace_deficit_pct - t.team_pace_deficit, 3) AS pace_vs_team_pct\n",
+        "FROM per_driver d\n",
+        "LEFT JOIN per_team t ON t.season = d.season AND t.team = d.team\n"
+      ]
+    },
+    {
+      "name": "ds_team_season",
+      "displayName": "Constructor scorecard",
+      "queryLines": [
+        "-- Governed measures only. Points, pace, pit work and reliability all resolve\n",
+        "-- through the metric view, so the scorecard cannot disagree with Genie.\n",
+        "SELECT `Season`                                AS season,\n",
+        "       `Team`                                  AS team,\n",
+        "       MEASURE(`Starts`)                       AS car_races,\n",
+        "       MEASURE(`Total Points`)                 AS points,\n",
+        "       MEASURE(`Wins`)                         AS wins,\n",
+        "       MEASURE(`Podiums`)                      AS podiums,\n",
+        "       ROUND(MEASURE(`Average Qualifying`), 2) AS avg_quali,\n",
+        "       ROUND(MEASURE(`Average Finish`), 2)     AS avg_finish,\n",
+        "       ROUND(MEASURE(`Pace Deficit`), 3)       AS avg_pace_deficit_pct,\n",
+        "       ROUND(MEASURE(`Average Pit Stop`), 2)   AS avg_pit_stop_s,\n",
+        "       ROUND(MEASURE(`DNF Rate`), 1)           AS dnf_rate_pct,\n",
+        "       ROUND(MEASURE(`Points Finish Rate`), 1) AS points_finish_pct\n",
+        "FROM driver_metrics\n",
+        "GROUP BY ALL\n",
+        "HAVING `Team` IS NOT NULL\n"
+      ]
+    },
+    {
+      "name": "ds_circuit",
+      "displayName": "Circuit profile",
+      "queryLines": [
+        "WITH outcomes AS (\n",
+        "  SELECT circuit_name, circuit_country, season, round,\n",
+        "         SUM(CASE WHEN grid_position = 1 THEN 1 ELSE 0 END)                AS poles,\n",
+        "         SUM(CASE WHEN grid_position = 1 AND is_win THEN 1 ELSE 0 END)     AS pole_wins\n",
+        "  FROM driver_performance\n",
+        "  GROUP BY circuit_name, circuit_country, season, round\n",
+        "),\n",
+        "strategy AS (\n",
+        "  SELECT circuit_name, season, round,\n",
+        "         MAX(field_modal_stops) AS modal_stops,\n",
+        "         MAX(field_stop_spread) AS stop_spread\n",
+        "  FROM race_strategy\n",
+        "  GROUP BY circuit_name, season, round\n",
+        "),\n",
+        "conditions AS (\n",
+        "  SELECT circuit_name, season, round, avg_abs_positions_changed,\n",
+        "         retirement_rate_pct, was_wet\n",
+        "  FROM race_conditions\n",
+        ")\n",
+        "SELECT o.circuit_name, o.circuit_country,\n",
+        "       COUNT(*)                                            AS races,\n",
+        "       MODE(s.modal_stops)                                 AS typical_stops,\n",
+        "       ROUND(AVG(s.stop_spread), 2)                        AS avg_stop_spread,\n",
+        "       ROUND(AVG(c.avg_abs_positions_changed), 2)          AS overtaking_index,\n",
+        "       ROUND(100.0 * SUM(o.pole_wins) / NULLIF(SUM(o.poles), 0), 1) AS pole_to_win_pct,\n",
+        "       ROUND(AVG(c.retirement_rate_pct), 1)                AS avg_retirement_rate_pct,\n",
+        "       SUM(CASE WHEN c.was_wet THEN 1 ELSE 0 END)          AS wet_races\n",
+        "FROM outcomes o\n",
+        "LEFT JOIN strategy s   ON s.circuit_name = o.circuit_name AND s.season = o.season AND s.round = o.round\n",
+        "LEFT JOIN conditions c ON c.circuit_name = o.circuit_name AND c.season = o.season AND c.round = o.round\n",
+        "GROUP BY o.circuit_name, o.circuit_country\n"
+      ]
+    },
+    {
+      "name": "ds_strategy",
+      "displayName": "Race strategy",
+      "queryLines": [
+        "SELECT season, round, race_name, circuit_name,\n",
+        "       driver_name,\n",
+        "       constructor_name_as_of_race AS team,\n",
+        "       stops, stints, first_stop_lap,\n",
+        "       avg_service_stop_s, fastest_stop_s,\n",
+        "       field_modal_stops, field_stop_spread, strategy_vs_field,\n",
+        "       positions_gained, finish_position, dnf_flag\n",
+        "FROM race_strategy\n",
+        "WHERE finish_position IS NOT NULL\n"
+      ]
+    },
+    {
+      "name": "ds_race_conditions",
+      "displayName": "Race conditions",
+      "queryLines": [
+        "SELECT season, round, race_date, race_name, circuit_name, circuit_country,\n",
+        "       weather_available, precipitation_mm, rain_mm,\n",
+        "       temp_max_c, temp_min_c, wind_max_kmh, conditions,\n",
+        "       was_wet, rainfall_verdict,\n",
+        "       drivers_classified, retirements, retirement_rate_pct,\n",
+        "       avg_abs_positions_changed AS overtaking_index,\n",
+        "       winner, winner_grid_position, winning_constructor\n",
+        "FROM race_conditions\n",
+        "WHERE weather_available\n"
+      ]
+    },
+    {
+      "name": "ds_championship",
+      "displayName": "Championship progression",
+      "queryLines": [
+        "SELECT season, round, race_date, race_name, driver_name,\n",
+        "       constructor_name_as_of_race AS team,\n",
+        "       championship_position, cumulative_points, cumulative_wins,\n",
+        "       gap_to_leader, points_gained_in_round, position_change_vs_prev_round,\n",
+        "       is_championship_leader\n",
+        "FROM championship_progression\n"
+      ]
+    },
+    {
+      "name": "ds_dq",
+      "displayName": "Data quality",
+      "queryLines": [
+        "WITH e AS (\n",
+        "  SELECT origin.update_id AS update_id, timestamp AS event_time,\n",
+        "         origin.flow_name AS dataset_name,\n",
+        "         explode(from_json(\n",
+        "           get_json_object(details, '$.flow_progress.data_quality.expectations'),\n",
+        "           'ARRAY<STRUCT<name STRING, passed_records BIGINT, failed_records BIGINT>>'\n",
+        "         )) AS x\n",
+        "  FROM pipeline_event_log\n",
+        "  WHERE event_type = 'flow_progress'\n",
+        "    AND get_json_object(details, '$.flow_progress.data_quality.expectations') IS NOT NULL\n",
+        ")\n",
+        "SELECT dataset_name, x.name AS expectation_name,\n",
+        "       SUM(x.passed_records) AS passed_records,\n",
+        "       SUM(x.failed_records) AS failed_records,\n",
+        "       MAX(event_time)       AS last_run\n",
+        "FROM e GROUP BY dataset_name, x.name\n"
+      ]
+    },
+    {
+      "name": "ds_driver_standings",
+      "displayName": "Drivers' championship",
+      "queryLines": [
+        "WITH final AS (\n",
+        "  SELECT season, MAX(round) AS last_round FROM championship_progression GROUP BY season\n",
+        "),\n",
+        "standings AS (\n",
+        "  SELECT c.season,\n",
+        "         c.championship_position          AS position,\n",
+        "         c.driver_name,\n",
+        "         c.constructor_name_as_of_race    AS team,\n",
+        "         c.cumulative_points              AS points,\n",
+        "         c.cumulative_wins                AS wins,\n",
+        "         c.gap_to_leader\n",
+        "  FROM championship_progression c\n",
+        "  JOIN final f ON f.season = c.season AND f.last_round = c.round\n",
+        ")\n",
+        "SELECT s.*,\n",
+        "       MAX(CASE WHEN position = 1 THEN points END) OVER (PARTITION BY season)\n",
+        "     - MAX(CASE WHEN position = 2 THEN points END) OVER (PARTITION BY season) AS title_margin,\n",
+        "       MAX(CASE WHEN position = 1 THEN points END) OVER (PARTITION BY season) AS champion_points\n",
+        "FROM standings s\n"
+      ]
+    },
+    {
+      "name": "ds_constructor_standings",
+      "displayName": "Constructors' championship",
+      "queryLines": [
+        "WITH final_round AS (\n",
+        "  SELECT season, MAX(round) AS last_round FROM constructor_standings GROUP BY season\n",
+        "),\n",
+        "official AS (\n",
+        "  SELECT s.season,\n",
+        "         s.championship_position AS position,\n",
+        "         s.constructor_name      AS team,\n",
+        "         s.cumulative_points     AS points,\n",
+        "         s.cumulative_wins       AS wins,\n",
+        "         s.gap_to_leader\n",
+        "  FROM constructor_standings s\n",
+        "  JOIN final_round f ON f.season = s.season AND f.last_round = s.round\n",
+        "),\n",
+        "extras AS (\n",
+        "  SELECT season, constructor_name_as_of_race AS team,\n",
+        "         SUM(CASE WHEN is_podium THEN 1 ELSE 0 END) AS podiums,\n",
+        "         SUM(CASE WHEN dnf_flag  THEN 1 ELSE 0 END) AS dnfs,\n",
+        "         COUNT(DISTINCT driver_name)                AS drivers\n",
+        "  FROM driver_performance\n",
+        "  WHERE constructor_name_as_of_race IS NOT NULL\n",
+        "  GROUP BY season, constructor_name_as_of_race\n",
+        ")\n",
+        "SELECT o.season, o.position, o.team, o.points, o.wins, o.gap_to_leader,\n",
+        "       e.podiums, e.dnfs, e.drivers,\n",
+        "       MAX(o.points) OVER (PARTITION BY o.season) AS winning_team_points\n",
+        "FROM official o\n",
+        "LEFT JOIN extras e ON e.season = o.season AND e.team = o.team\n"
+      ]
+    },
+    {
+      "name": "ds_constructor_progression",
+      "displayName": "Constructors' title race",
+      "queryLines": [
+        "SELECT season, round, race_name,\n",
+        "       constructor_name AS team,\n",
+        "       championship_position,\n",
+        "       cumulative_points,\n",
+        "       gap_to_leader,\n",
+        "       points_gained_in_round,\n",
+        "       position_change_vs_prev_round\n",
+        "FROM constructor_standings\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "page_standings",
+      "displayName": "Standings",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "t_standings",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Standings — where the season finished"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f_st_season",
+            "queries": [
+              {
+                "name": "q_f_st_season_0",
+                "query": {
+                  "datasetName": "ds_driver_standings",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "q_f_st_season_1",
+                "query": {
+                  "datasetName": "ds_constructor_standings",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "q_f_st_season_2",
+                "query": {
+                  "datasetName": "ds_constructor_progression",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "queryName": "q_f_st_season_0"
+                  },
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "queryName": "q_f_st_season_1"
+                  },
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "queryName": "q_f_st_season_2"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Season"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_st_champion",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_driver_standings",
+                  "fields": [
+                    {
+                      "name": "max(champion_points)",
+                      "expression": "MAX(`champion_points`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(champion_points)",
+                  "displayName": "Champion's points"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Champion's points",
+                "showDescription": true,
+                "description": "Race + sprint, as awarded"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_st_margin",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_driver_standings",
+                  "fields": [
+                    {
+                      "name": "max(title_margin)",
+                      "expression": "MAX(`title_margin`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(title_margin)",
+                  "displayName": "Title margin"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Title margin",
+                "showDescription": true,
+                "description": "Points between first and second"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_st_team",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_constructor_standings",
+                  "fields": [
+                    {
+                      "name": "max(winning_team_points)",
+                      "expression": "MAX(`winning_team_points`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(winning_team_points)",
+                  "displayName": "Winning team's points"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Winning team's points",
+                "showDescription": true,
+                "description": "Reconciles exactly with the published constructor standings"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "tb_driver_standings",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_driver_standings",
+                  "fields": [
+                    {
+                      "name": "position",
+                      "expression": "`position`"
+                    },
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    },
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "points",
+                      "expression": "`points`"
+                    },
+                    {
+                      "name": "wins",
+                      "expression": "`wins`"
+                    },
+                    {
+                      "name": "gap_to_leader",
+                      "expression": "`gap_to_leader`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "position",
+                    "displayName": "Pos",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "driver_name",
+                    "displayName": "Driver",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "points",
+                    "displayName": "Points",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "wins",
+                    "displayName": "Wins",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "gap_to_leader",
+                    "displayName": "Gap",
+                    "type": "float"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Drivers' Championship",
+                "showDescription": true,
+                "description": "Straight from the standings endpoint, at the final round of the season."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 6,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "tb_constructor_standings",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_constructor_standings",
+                  "fields": [
+                    {
+                      "name": "position",
+                      "expression": "`position`"
+                    },
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "points",
+                      "expression": "`points`"
+                    },
+                    {
+                      "name": "wins",
+                      "expression": "`wins`"
+                    },
+                    {
+                      "name": "podiums",
+                      "expression": "`podiums`"
+                    },
+                    {
+                      "name": "dnfs",
+                      "expression": "`dnfs`"
+                    },
+                    {
+                      "name": "gap_to_leader",
+                      "expression": "`gap_to_leader`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "position",
+                    "displayName": "Pos",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "points",
+                    "displayName": "Points",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "wins",
+                    "displayName": "Wins",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "podiums",
+                    "displayName": "Podiums",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "dnfs",
+                    "displayName": "DNFs",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "gap_to_leader",
+                    "displayName": "Gap",
+                    "type": "float"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Constructors' Championship",
+                "showDescription": true,
+                "description": "Straight from the published constructor standings. Reconciles with the sum of driver results by as-of-race team: zero mismatches, every team, every season."
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 6,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "t_st_race",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### The constructors' title race, round by round"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "l_constructor_race",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_constructor_progression",
+                  "fields": [
+                    {
+                      "name": "round",
+                      "expression": "`round`"
+                    },
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "sum(cumulative_points)",
+                      "expression": "SUM(`cumulative_points`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "round",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Round"
+                },
+                "y": {
+                  "fieldName": "sum(cumulative_points)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Cumulative points"
+                },
+                "color": {
+                  "fieldName": "team",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Driver"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Where the constructors' championship turned",
+                "showDescription": true,
+                "description": "From the standings endpoint itself, not summed. 2024: Red Bull led on 373 at round 12 and finished third; McLaren won it from 295."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "page_driver_form",
+      "displayName": "Driver Form",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "t_form",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Driver form and deployment — who is over-performing their car?"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f_form_season",
+            "queries": [
+              {
+                "name": "q_f_form_season_0",
+                "query": {
+                  "datasetName": "ds_driver_season",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "q_f_form_season_1",
+                "query": {
+                  "datasetName": "ds_driver_race",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "queryName": "q_f_form_season_0"
+                  },
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "queryName": "q_f_form_season_1"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Season"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "f_form_team",
+            "queries": [
+              {
+                "name": "q_f_form_team_0",
+                "query": {
+                  "datasetName": "ds_driver_season",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "q_f_form_team_1",
+                "query": {
+                  "datasetName": "ds_driver_race",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "queryName": "q_f_form_team_0"
+                  },
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "queryName": "q_f_form_team_1"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Team"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "f_form_driver",
+            "queries": [
+              {
+                "name": "q_f_form_driver_0",
+                "query": {
+                  "datasetName": "ds_driver_season",
+                  "fields": [
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "q_f_form_driver_1",
+                "query": {
+                  "datasetName": "ds_driver_race",
+                  "fields": [
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "driver_name",
+                    "displayName": "Driver",
+                    "queryName": "q_f_form_driver_0"
+                  },
+                  {
+                    "fieldName": "driver_name",
+                    "displayName": "Driver",
+                    "queryName": "q_f_form_driver_1"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Driver"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_form_places",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_driver_race",
+                  "fields": [
+                    {
+                      "name": "avg(quali_to_finish_delta)",
+                      "expression": "AVG(`quali_to_finish_delta`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(quali_to_finish_delta)",
+                  "displayName": "Mean places made up",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Mean places made up",
+                "showDescription": true,
+                "description": "Qualifying position minus finishing position. Positive means gained on Sunday."
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "b_pace_vs_team",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_driver_season",
+                  "fields": [
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    },
+                    {
+                      "name": "avg(pace_vs_team_pct)",
+                      "expression": "AVG(`pace_vs_team_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(pace_vs_team_pct)",
+                      "displayName": "Pace vs own team (%)"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "driver_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Driver"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Over- and under-performing the machinery",
+                "showDescription": true,
+                "description": "Driver's clean-lap pace minus their team's average. Negative is quicker than the car's norm — check the race count in the table below, a two-race sample is not form."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "s_quali_race",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_driver_race",
+                  "fields": [
+                    {
+                      "name": "quali_position",
+                      "expression": "`quali_position`"
+                    },
+                    {
+                      "name": "finish_position",
+                      "expression": "`finish_position`"
+                    },
+                    {
+                      "name": "form_verdict",
+                      "expression": "`form_verdict`"
+                    },
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    },
+                    {
+                      "name": "race_name",
+                      "expression": "`race_name`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "quali_position",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Qualifying position"
+                },
+                "y": {
+                  "fieldName": "finish_position",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Finishing position"
+                },
+                "color": {
+                  "fieldName": "form_verdict",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "made up places",
+                        "color": "#009E73"
+                      },
+                      {
+                        "value": "held position",
+                        "color": "#0072B2"
+                      },
+                      {
+                        "value": "lost places",
+                        "color": "#E69F00"
+                      },
+                      {
+                        "value": "retired",
+                        "color": "#FF7E5C"
+                      }
+                    ]
+                  },
+                  "displayName": "form_verdict"
+                }
+              },
+              "mark": {
+                "opacity": 0.7
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Saturday against Sunday — qualifying vs. finishing position",
+                "showDescription": true,
+                "description": "Below the diagonal means places gained. The green cloud is where races are won from."
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "t_form_table",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Season form — sample size included, because pace-vs-team is noisy below ~5 races"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "tb_form",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_driver_season",
+                  "fields": [
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    },
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "races",
+                      "expression": "`races`"
+                    },
+                    {
+                      "name": "points",
+                      "expression": "`points`"
+                    },
+                    {
+                      "name": "avg_quali",
+                      "expression": "`avg_quali`"
+                    },
+                    {
+                      "name": "avg_finish",
+                      "expression": "`avg_finish`"
+                    },
+                    {
+                      "name": "avg_places_made_up",
+                      "expression": "`avg_places_made_up`"
+                    },
+                    {
+                      "name": "avg_pace_deficit_pct",
+                      "expression": "`avg_pace_deficit_pct`"
+                    },
+                    {
+                      "name": "pace_vs_team_pct",
+                      "expression": "`pace_vs_team_pct`"
+                    },
+                    {
+                      "name": "avg_consistency_s",
+                      "expression": "`avg_consistency_s`"
+                    },
+                    {
+                      "name": "dnf_rate_pct",
+                      "expression": "`dnf_rate_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "driver_name",
+                    "displayName": "Driver",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "races",
+                    "displayName": "Races",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "points",
+                    "displayName": "Points",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_quali",
+                    "displayName": "Avg quali",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_finish",
+                    "displayName": "Avg finish",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_places_made_up",
+                    "displayName": "Places made up",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_pace_deficit_pct",
+                    "displayName": "Pace deficit %",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "pace_vs_team_pct",
+                    "displayName": "Pace vs team %",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_consistency_s",
+                    "displayName": "Consistency s",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "dnf_rate_pct",
+                    "displayName": "DNF %",
+                    "type": "float"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Driver season form"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "page_constructor",
+      "displayName": "Constructor Benchmarking",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "t_team",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Constructor benchmarking — where are points won and lost?"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f_team_season",
+            "queries": [
+              {
+                "name": "q_f_team_season_0",
+                "query": {
+                  "datasetName": "ds_team_season",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "q_f_team_season_1",
+                "query": {
+                  "datasetName": "ds_strategy",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "queryName": "q_f_team_season_0"
+                  },
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "queryName": "q_f_team_season_1"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Season"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "f_team_name",
+            "queries": [
+              {
+                "name": "q_f_team_name_0",
+                "query": {
+                  "datasetName": "ds_team_season",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "q_f_team_name_1",
+                "query": {
+                  "datasetName": "ds_strategy",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "queryName": "q_f_team_name_0"
+                  },
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "queryName": "q_f_team_name_1"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Team"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_team_pit",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_team_season",
+                  "fields": [
+                    {
+                      "name": "avg(avg_pit_stop_s)",
+                      "expression": "AVG(`avg_pit_stop_s`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(avg_pit_stop_s)",
+                  "displayName": "Mean pit stop",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Mean pit stop",
+                "showDescription": true,
+                "description": "Service time only — red-flag stoppages excluded"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_team_dnf",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_team_season",
+                  "fields": [
+                    {
+                      "name": "avg(dnf_rate_pct)",
+                      "expression": "AVG(`dnf_rate_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(dnf_rate_pct)",
+                  "displayName": "Mean DNF rate %",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Mean DNF rate %",
+                "showDescription": true,
+                "description": "Share of car-races ending in retirement"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "b_team_quali",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_team_season",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "avg(avg_quali)",
+                      "expression": "AVG(`avg_quali`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(avg_quali)",
+                      "displayName": "Average qualifying position"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "team",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Team"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Saturday: grid position",
+                "showDescription": true,
+                "description": "Lower is better. Compare against race pace on the right."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "b_team_pace",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_team_season",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "avg(avg_pace_deficit_pct)",
+                      "expression": "AVG(`avg_pace_deficit_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(avg_pace_deficit_pct)",
+                      "displayName": "Pace deficit (%)"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "team",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Team"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Sunday: race pace",
+                "showDescription": true,
+                "description": "Gap to the fastest median lap of each race. Shorter is quicker."
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "b_team_dnf",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_team_season",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "avg(dnf_rate_pct)",
+                      "expression": "AVG(`dnf_rate_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(dnf_rate_pct)",
+                      "displayName": "DNF rate (%)"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "team",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Team"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Reliability: what never finished",
+                "showDescription": true,
+                "description": "Points lost before the flag, regardless of pace."
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "t_team_table",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### The scorecard — quali, race pace, pit execution and reliability side by side"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "tb_team",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_team_season",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    },
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "car_races",
+                      "expression": "`car_races`"
+                    },
+                    {
+                      "name": "points",
+                      "expression": "`points`"
+                    },
+                    {
+                      "name": "wins",
+                      "expression": "`wins`"
+                    },
+                    {
+                      "name": "podiums",
+                      "expression": "`podiums`"
+                    },
+                    {
+                      "name": "avg_quali",
+                      "expression": "`avg_quali`"
+                    },
+                    {
+                      "name": "avg_finish",
+                      "expression": "`avg_finish`"
+                    },
+                    {
+                      "name": "avg_pace_deficit_pct",
+                      "expression": "`avg_pace_deficit_pct`"
+                    },
+                    {
+                      "name": "avg_pit_stop_s",
+                      "expression": "`avg_pit_stop_s`"
+                    },
+                    {
+                      "name": "dnf_rate_pct",
+                      "expression": "`dnf_rate_pct`"
+                    },
+                    {
+                      "name": "points_finish_pct",
+                      "expression": "`points_finish_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "car_races",
+                    "displayName": "Car-races",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "points",
+                    "displayName": "Points",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "wins",
+                    "displayName": "Wins",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "podiums",
+                    "displayName": "Podiums",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "avg_quali",
+                    "displayName": "Avg quali",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_finish",
+                    "displayName": "Avg finish",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_pace_deficit_pct",
+                    "displayName": "Pace deficit %",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_pit_stop_s",
+                    "displayName": "Avg stop s",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "dnf_rate_pct",
+                    "displayName": "DNF %",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "points_finish_pct",
+                    "displayName": "Points finish %",
+                    "type": "float"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Constructor scorecard"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "t_team_strategy",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### The pit wall — the fourth place points are won and lost"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "b_team_pit",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_strategy",
+                  "fields": [
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "avg(avg_service_stop_s)",
+                      "expression": "AVG(`avg_service_stop_s`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(avg_service_stop_s)",
+                      "displayName": "Mean service stop (s)"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "team",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Team"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Pit stop execution",
+                "showDescription": true,
+                "description": "Service stops only. Red-flag stoppages are excluded upstream, because a 35-minute suspension is a true duration and a meaningless average."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "b_strategy_payoff",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_strategy",
+                  "fields": [
+                    {
+                      "name": "strategy_vs_field",
+                      "expression": "`strategy_vs_field`"
+                    },
+                    {
+                      "name": "avg(positions_gained)",
+                      "expression": "AVG(`positions_gained`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(positions_gained)",
+                      "displayName": "Mean positions gained"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "strategy_vs_field",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Strategy against the field"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Did going off-strategy pay?",
+                "showDescription": true,
+                "description": "Running the field's strategy gains about 0.7 places. Deviating in either direction loses them — which is the argument for knowing the circuit prior before the weekend."
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 18,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "page_circuit",
+      "displayName": "Circuit Priors",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "t_circuit",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Circuit priors — what usually works here?"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f_circuit_country",
+            "queries": [
+              {
+                "name": "q_f_circuit_country_0",
+                "query": {
+                  "datasetName": "ds_circuit",
+                  "fields": [
+                    {
+                      "name": "circuit_country",
+                      "expression": "`circuit_country`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "q_f_circuit_country_1",
+                "query": {
+                  "datasetName": "ds_race_conditions",
+                  "fields": [
+                    {
+                      "name": "circuit_country",
+                      "expression": "`circuit_country`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "circuit_country",
+                    "displayName": "Country",
+                    "queryName": "q_f_circuit_country_0"
+                  },
+                  {
+                    "fieldName": "circuit_country",
+                    "displayName": "Country",
+                    "queryName": "q_f_circuit_country_1"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Country"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_circuit_count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_circuit",
+                  "fields": [
+                    {
+                      "name": "circuits",
+                      "expression": "COUNT(`circuit_name`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "circuits",
+                  "displayName": "Circuits profiled"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Circuits profiled",
+                "showDescription": true,
+                "description": "Across every season ingested"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_circuit_stops",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_circuit",
+                  "fields": [
+                    {
+                      "name": "avg(typical_stops)",
+                      "expression": "AVG(`typical_stops`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(typical_stops)",
+                  "displayName": "Typical stops",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Typical stops",
+                "showDescription": true,
+                "description": "Modal stop count across races at a circuit"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_circuit_pole",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_circuit",
+                  "fields": [
+                    {
+                      "name": "avg(pole_to_win_pct)",
+                      "expression": "AVG(`pole_to_win_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(pole_to_win_pct)",
+                  "displayName": "Pole to win %",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Pole to win %",
+                "showDescription": true,
+                "description": "How often pole converted into victory"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "b_circuit_overtaking",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_circuit",
+                  "fields": [
+                    {
+                      "name": "circuit_name",
+                      "expression": "`circuit_name`"
+                    },
+                    {
+                      "name": "avg(overtaking_index)",
+                      "expression": "AVG(`overtaking_index`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(overtaking_index)",
+                      "displayName": "Positions changed per driver"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "circuit_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Circuit"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Where the racing happens",
+                "showDescription": true,
+                "description": "Mean absolute position change per driver. High means track position is cheap to lose and to win."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "b_circuit_pole",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_circuit",
+                  "fields": [
+                    {
+                      "name": "circuit_name",
+                      "expression": "`circuit_name`"
+                    },
+                    {
+                      "name": "avg(pole_to_win_pct)",
+                      "expression": "AVG(`pole_to_win_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(pole_to_win_pct)",
+                      "displayName": "Pole converted to win (%)"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "circuit_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Circuit"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Where track position decides it",
+                "showDescription": true,
+                "description": "100% means pole always won. Read alongside the overtaking index — they should disagree."
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 4,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "b_circuit_spread",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_circuit",
+                  "fields": [
+                    {
+                      "name": "circuit_name",
+                      "expression": "`circuit_name`"
+                    },
+                    {
+                      "name": "avg(avg_stop_spread)",
+                      "expression": "AVG(`avg_stop_spread`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(avg_stop_spread)",
+                      "displayName": "Stops: most minus fewest"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "circuit_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Circuit"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Where teams disagreed on strategy",
+                "showDescription": true,
+                "description": "The gap between the fewest and the most stops in a race. A wide spread means the pit wall had a real choice to make; a narrow one means everybody knew the answer."
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "t_circuit_table",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### The prior — what to expect before the weekend starts"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "tb_circuit",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_circuit",
+                  "fields": [
+                    {
+                      "name": "circuit_name",
+                      "expression": "`circuit_name`"
+                    },
+                    {
+                      "name": "circuit_country",
+                      "expression": "`circuit_country`"
+                    },
+                    {
+                      "name": "races",
+                      "expression": "`races`"
+                    },
+                    {
+                      "name": "typical_stops",
+                      "expression": "`typical_stops`"
+                    },
+                    {
+                      "name": "avg_stop_spread",
+                      "expression": "`avg_stop_spread`"
+                    },
+                    {
+                      "name": "overtaking_index",
+                      "expression": "`overtaking_index`"
+                    },
+                    {
+                      "name": "pole_to_win_pct",
+                      "expression": "`pole_to_win_pct`"
+                    },
+                    {
+                      "name": "avg_retirement_rate_pct",
+                      "expression": "`avg_retirement_rate_pct`"
+                    },
+                    {
+                      "name": "wet_races",
+                      "expression": "`wet_races`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "circuit_name",
+                    "displayName": "Circuit",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "circuit_country",
+                    "displayName": "Country",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "races",
+                    "displayName": "Races",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "typical_stops",
+                    "displayName": "Typical stops",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "avg_stop_spread",
+                    "displayName": "Stop spread",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "overtaking_index",
+                    "displayName": "Overtaking index",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "pole_to_win_pct",
+                    "displayName": "Pole to win %",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "avg_retirement_rate_pct",
+                    "displayName": "Retirement %",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "wet_races",
+                    "displayName": "Wet races",
+                    "type": "integer"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Circuit profile"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "t_circuit_weather",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Conditions — what the weather does here, and what it does not"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "k_circuit_wet",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_race_conditions",
+                  "fields": [
+                    {
+                      "name": "wet",
+                      "expression": "SUM(CAST(`was_wet` AS INT))"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "wet",
+                  "displayName": "Races flagged wet"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Races flagged wet",
+                "showDescription": true,
+                "description": "Measured daily rainfall at or above 1.0 mm — not a report of rain during the race"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 19,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_circuit_rain",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_race_conditions",
+                  "fields": [
+                    {
+                      "name": "avg(precipitation_mm)",
+                      "expression": "AVG(`precipitation_mm`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(precipitation_mm)",
+                  "displayName": "Mean rainfall (mm)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Mean rainfall (mm)",
+                "showDescription": true,
+                "description": "Race day, at the circuit"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 19,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_circuit_retire",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_race_conditions",
+                  "fields": [
+                    {
+                      "name": "avg(retirement_rate_pct)",
+                      "expression": "AVG(`retirement_rate_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(retirement_rate_pct)",
+                  "displayName": "Mean retirement rate %",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Mean retirement rate %",
+                "showDescription": true,
+                "description": "Compare against the wet split below"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 19,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_circuit_churn",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_race_conditions",
+                  "fields": [
+                    {
+                      "name": "avg(overtaking_index)",
+                      "expression": "AVG(`overtaking_index`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(overtaking_index)",
+                  "displayName": "Mean positions changed",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Mean positions changed",
+                "showDescription": true,
+                "description": "Per driver, per race"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 19,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "s_rain_retirements",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_race_conditions",
+                  "fields": [
+                    {
+                      "name": "precipitation_mm",
+                      "expression": "`precipitation_mm`"
+                    },
+                    {
+                      "name": "retirement_rate_pct",
+                      "expression": "`retirement_rate_pct`"
+                    },
+                    {
+                      "name": "rainfall_verdict",
+                      "expression": "`rainfall_verdict`"
+                    },
+                    {
+                      "name": "race_name",
+                      "expression": "`race_name`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "precipitation_mm",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Rainfall on race day (mm)"
+                },
+                "y": {
+                  "fieldName": "retirement_rate_pct",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Retirement rate (%)"
+                },
+                "color": {
+                  "fieldName": "rainfall_verdict",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "flagged wet by rainfall",
+                        "color": "#0072B2"
+                      },
+                      {
+                        "value": "under the wet threshold",
+                        "color": "#E69F00"
+                      },
+                      {
+                        "value": "no observation",
+                        "color": "#6E7B85"
+                      }
+                    ]
+                  },
+                  "displayName": "rainfall_verdict"
+                }
+              },
+              "mark": {
+                "opacity": 0.7
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Does rain cause chaos? Each point is a race",
+                "showDescription": true,
+                "description": "Monza 2024 measured 19.1 mm and ran dry. A daily total cannot tell rain that fell overnight from rain that fell during the race, which is why the mart names the source of the flag rather than asserting it rained."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 21,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "b_wet_churn",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_race_conditions",
+                  "fields": [
+                    {
+                      "name": "rainfall_verdict",
+                      "expression": "`rainfall_verdict`"
+                    },
+                    {
+                      "name": "avg(overtaking_index)",
+                      "expression": "AVG(`overtaking_index`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(overtaking_index)",
+                      "displayName": "Mean positions changed per driver"
+                    }
+                  ]
+                },
+                "y": {
+                  "fieldName": "rainfall_verdict",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Rainfall verdict"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Does rain change the racing?",
+                "showDescription": true,
+                "description": "If wet races produced more overtaking, these bars would separate. Read it with the scatter — the honest answer here is that they barely do."
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 21,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "t_circuit_cond_table",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Race by race, wettest first"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 28,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "tb_race_conditions",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_race_conditions",
+                  "fields": [
+                    {
+                      "name": "race_name",
+                      "expression": "`race_name`"
+                    },
+                    {
+                      "name": "circuit_country",
+                      "expression": "`circuit_country`"
+                    },
+                    {
+                      "name": "precipitation_mm",
+                      "expression": "`precipitation_mm`"
+                    },
+                    {
+                      "name": "temp_max_c",
+                      "expression": "`temp_max_c`"
+                    },
+                    {
+                      "name": "conditions",
+                      "expression": "`conditions`"
+                    },
+                    {
+                      "name": "rainfall_verdict",
+                      "expression": "`rainfall_verdict`"
+                    },
+                    {
+                      "name": "retirement_rate_pct",
+                      "expression": "`retirement_rate_pct`"
+                    },
+                    {
+                      "name": "overtaking_index",
+                      "expression": "`overtaking_index`"
+                    },
+                    {
+                      "name": "winner",
+                      "expression": "`winner`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "race_name",
+                    "displayName": "Race",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "circuit_country",
+                    "displayName": "Country",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "precipitation_mm",
+                    "displayName": "Rain (mm)",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "temp_max_c",
+                    "displayName": "Max temp °C",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "conditions",
+                    "displayName": "Conditions",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "rainfall_verdict",
+                    "displayName": "Verdict",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "retirement_rate_pct",
+                    "displayName": "Retired %",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "overtaking_index",
+                    "displayName": "Positions changed",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "winner",
+                    "displayName": "Winner",
+                    "type": "string"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Race conditions and what happened",
+                "showDescription": true,
+                "description": "weather_available = false is excluded here: ERA5 lags about five days, and a race with no observation is not a dry race."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 29,
+            "width": 12,
+            "height": 8
+          }
+        }
+      ]
+    },
+    {
+      "name": "page_championship",
+      "displayName": "Championship Swing",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "t_champ",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Championship swing — which rounds decided the title?"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f_champ_season",
+            "queries": [
+              {
+                "name": "q_f_champ_season_0",
+                "query": {
+                  "datasetName": "ds_championship",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "queryName": "q_f_champ_season_0"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Season"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "f_champ_driver",
+            "queries": [
+              {
+                "name": "q_f_champ_driver_0",
+                "query": {
+                  "datasetName": "ds_championship",
+                  "fields": [
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "driver_name",
+                    "displayName": "Driver",
+                    "queryName": "q_f_champ_driver_0"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Driver"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_champ_swing",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_championship",
+                  "fields": [
+                    {
+                      "name": "max(points_gained_in_round)",
+                      "expression": "MAX(`points_gained_in_round`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(points_gained_in_round)",
+                  "displayName": "Biggest round haul"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Biggest round haul",
+                "showDescription": true,
+                "description": "Most points taken by one driver in a single round"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "k_champ_gap",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_championship",
+                  "fields": [
+                    {
+                      "name": "max(gap_to_leader)",
+                      "expression": "MAX(`gap_to_leader`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(gap_to_leader)",
+                  "displayName": "Widest gap to leader",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Widest gap to leader",
+                "showDescription": true,
+                "description": "At any point in the season"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "l_champ_points",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_championship",
+                  "fields": [
+                    {
+                      "name": "round",
+                      "expression": "`round`"
+                    },
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    },
+                    {
+                      "name": "sum(cumulative_points)",
+                      "expression": "SUM(`cumulative_points`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "round",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Round"
+                },
+                "y": {
+                  "fieldName": "sum(cumulative_points)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Cumulative points"
+                },
+                "color": {
+                  "fieldName": "driver_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Driver"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "The title race, round by round",
+                "showDescription": true,
+                "description": "Filter to two drivers to see where the championship actually turned."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "l_champ_gap",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_championship",
+                  "fields": [
+                    {
+                      "name": "round",
+                      "expression": "`round`"
+                    },
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    },
+                    {
+                      "name": "sum(gap_to_leader)",
+                      "expression": "SUM(`gap_to_leader`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "round",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Round"
+                },
+                "y": {
+                  "fieldName": "sum(gap_to_leader)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Points behind the leader"
+                },
+                "color": {
+                  "fieldName": "driver_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Driver"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Gap to the leader — the swing view",
+                "showDescription": true,
+                "description": "A rising line is a title slipping away. Flat at zero is the driver leading."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "t_champ_table",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Round-by-round movement"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "tb_champ",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_championship",
+                  "fields": [
+                    {
+                      "name": "season",
+                      "expression": "`season`"
+                    },
+                    {
+                      "name": "round",
+                      "expression": "`round`"
+                    },
+                    {
+                      "name": "race_name",
+                      "expression": "`race_name`"
+                    },
+                    {
+                      "name": "driver_name",
+                      "expression": "`driver_name`"
+                    },
+                    {
+                      "name": "team",
+                      "expression": "`team`"
+                    },
+                    {
+                      "name": "championship_position",
+                      "expression": "`championship_position`"
+                    },
+                    {
+                      "name": "cumulative_points",
+                      "expression": "`cumulative_points`"
+                    },
+                    {
+                      "name": "gap_to_leader",
+                      "expression": "`gap_to_leader`"
+                    },
+                    {
+                      "name": "points_gained_in_round",
+                      "expression": "`points_gained_in_round`"
+                    },
+                    {
+                      "name": "position_change_vs_prev_round",
+                      "expression": "`position_change_vs_prev_round`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "season",
+                    "displayName": "Season",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "round",
+                    "displayName": "Round",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "race_name",
+                    "displayName": "Race",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "driver_name",
+                    "displayName": "Driver",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "team",
+                    "displayName": "Team",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "championship_position",
+                    "displayName": "Position",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "cumulative_points",
+                    "displayName": "Points",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "gap_to_leader",
+                    "displayName": "Gap to leader",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "points_gained_in_round",
+                    "displayName": "Gained",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "position_change_vs_prev_round",
+                    "displayName": "Places moved",
+                    "type": "integer"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Championship progression"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 12,
+            "height": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "page_trust",
+      "displayName": "Trust",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "t_dq",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Can these numbers be trusted?"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "t_dq_sub",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Every expectation the pipeline evaluated, per dataset per run. A rejected row is routed to a quarantine table with the rule it violated — never dropped silently."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "k_dq_passed",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_dq",
+                  "fields": [
+                    {
+                      "name": "sum(passed_records)",
+                      "expression": "SUM(`passed_records`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(passed_records)",
+                  "displayName": "Records passing expectations",
+                  "format": {
+                    "type": "number",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Records passing expectations"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "k_dq_failed",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_dq",
+                  "fields": [
+                    {
+                      "name": "sum(failed_records)",
+                      "expression": "SUM(`failed_records`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(failed_records)",
+                  "displayName": "Records rejected"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Records rejected",
+                "showDescription": true,
+                "description": "Quarantined with a reason, not discarded"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "k_dq_rules",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_dq",
+                  "fields": [
+                    {
+                      "name": "rules",
+                      "expression": "COUNT(`expectation_name`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "rules",
+                  "displayName": "Expectations evaluated"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Expectations evaluated"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "tb_dq",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_dq",
+                  "fields": [
+                    {
+                      "name": "dataset_name",
+                      "expression": "`dataset_name`"
+                    },
+                    {
+                      "name": "expectation_name",
+                      "expression": "`expectation_name`"
+                    },
+                    {
+                      "name": "passed_records",
+                      "expression": "`passed_records`"
+                    },
+                    {
+                      "name": "failed_records",
+                      "expression": "`failed_records`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "dataset_name",
+                    "displayName": "Dataset",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "expectation_name",
+                    "displayName": "Expectation",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "passed_records",
+                    "displayName": "Passed",
+                    "type": "integer"
+                  },
+                  {
+                    "fieldName": "failed_records",
+                    "displayName": "Failed",
+                    "type": "integer"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Data quality by dataset and rule",
+                "showDescription": true,
+                "description": "Non-zero failures are expected and explained: red-flag laps, standings rows with no position, and pit stops published with no duration."
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 8
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#FCFCFC",
+        "dark": "#1F272D"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#11171C"
+      },
+      "widgetBorderColor": {
+        "light": "#FFFFFF",
+        "dark": "#11171C"
+      },
+      "fontColor": {
+        "light": "#11171C",
+        "dark": "#E8ECF0"
+      },
+      "selectionColor": {
+        "light": "#E10600",
+        "dark": "#FF6B5C"
+      },
+      "visualizationColors": [
+        "#0072B2",
+        "#E69F00",
+        "#009E73",
+        "#CC79A7",
+        "#D55E00",
+        "#56B4E9",
+        "#6E7B85"
+      ],
+      "widgetHeaderAlignment": "LEFT",
+      "widgetCornerRadius": 8
+    }
+  }
+}

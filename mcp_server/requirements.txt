@@ -1,0 +1,8 @@
+# CPU-only torch: the CUDA build is ~2.5 GB and would risk the app image
+# timing out on Free Edition.
+--extra-index-url https://download.pytorch.org/whl/cpu
+fastmcp>=3.2.0
+uvicorn>=0.30.0
+psycopg2-binary>=2.9.9
+databricks-sdk>=0.30.0
+sentence-transformers>=3.0.0

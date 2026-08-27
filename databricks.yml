@@ -1,0 +1,77 @@
+# Declarative Automation Bundle for the F1 Intelligence Copilot.
+#
+# This bundle merges two capstones into one platform:
+#   - formula1-capstone-project contributed the governed medallion pipeline
+#     (src/), the AI/BI dashboard, and Genie — the resources below that touch
+#     ingestion, the pipeline and the dashboard are that project's, unmodified
+#     in shape.
+#   - f1-strategy-copilot contributed the Lakebase serving layer, the RAG
+#     agent, the MCP server app and the Change Data Feed analytics loop —
+#     f1_jobs.yml is that project's job definitions.
+#
+# Merging the two also seeded three extra Gold marts into Lakebase —
+# race_strategy, lap_pace, constructor_standings — and replaced a second,
+# independent local Open-Meteo fetch the standalone copilot used to make for
+# weather with a seed straight from the governed race_conditions mart.
+#
+# What this bundle does NOT own: the catalog, the schemas, the landing Volume,
+# and the two Databricks Apps (mcp_server/, app/). Free Edition refuses catalog
+# creation over the API, and apps are created and deployed via the CLI (see
+# README.md §5) because their service principals do not exist until `apps
+# create` runs — a bundle resource can't sequence that.
+#
+# Deploy:  databricks bundle deploy -t dev --profile <profile>
+# Run:     databricks bundle run f1_medallion_pipeline -t dev --profile <profile>
+
+bundle:
+  name: f1_intelligence_copilot
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog holding the bronze/silver/gold schemas.
+    default: f1
+  landing_root:
+    description: UC Volume path holding the raw Jolpica JSON payloads.
+    default: /Volumes/${var.catalog}/raw/landing
+  warehouse_id:
+    description: >-
+      SQL warehouse backing the AI/BI dashboard and the seed_gold bridge. No
+      default — every workspace's warehouse id is different. Find yours with
+      `databricks warehouses list --profile <profile>`, then pass
+      `--var warehouse_id=<id>` or export `BUNDLE_VAR_warehouse_id`.
+  lakebase_scope:
+    description: Databricks secret scope holding the Lakebase connection URL.
+    default: database
+  lakebase_key:
+    description: Secret key holding the base64-encoded Postgres URL.
+    default: lakebase-url
+
+targets:
+  # Default target. `mode: development` prefixes resource names with
+  # [dev <user>], pauses all schedules, and puts the pipeline in development
+  # mode — what you want while iterating on a limited compute budget.
+  #
+  # Neither `host:` nor `profile:` here, on purpose. Both come from the CLI
+  # profile you pass, so a fork deploys to its own workspace with no edit to
+  # this file. Pass --profile <name>, or export DATABRICKS_CONFIG_PROFILE.
+  dev:
+    default: true
+    mode: development
+
+  # Production target. It deliberately points at a *different* catalog: on
+  # Free Edition there is only one workspace, so if prod shared `f1` both
+  # targets would write the same tables and a prod deploy would silently
+  # collide with dev. Create `f1_prod` in the UI before deploying this target.
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: f1_prod
+      landing_root: /Volumes/f1_prod/raw/landing
+    permissions:
+      - user_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE

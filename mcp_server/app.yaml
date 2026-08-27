@@ -1,0 +1,27 @@
+command:
+  - "python"
+  - "f1_mcp_server.py"
+
+resources:
+  - name: requirements
+    source:
+      path: ./requirements.txt
+
+env:
+  # Only the scope and key NAMES live here. The Postgres connection URL stays
+  # in the Databricks secret and is never committed.
+  - name: LAKEBASE_SECRET_SCOPE
+    value: "database"
+  - name: LAKEBASE_SECRET_KEY
+    value: "lakebase-url"
+
+  # Must match the model used to build the embeddings. 384 dimensions.
+  - name: EMBEDDING_MODEL
+    value: "sentence-transformers/all-MiniLM-L6-v2"
+
+  # App containers have a read-only filesystem outside /tmp; HuggingFace cannot
+  # cache the model anywhere else.
+  - name: HF_HOME
+    value: "/tmp/.cache/huggingface"
+  - name: SENTENCE_TRANSFORMERS_HOME
+    value: "/tmp/.cache/huggingface"

@@ -1,0 +1,23 @@
+# Development-only dependencies for the whole merged repository.
+#
+# The Spark pipeline and ingestion job need none of this — ingestion uses only
+# the standard library, and the pipeline runs on Databricks where Spark and the
+# SDK already exist. pyspark is deliberately absent for the same reason it was
+# absent in formula1-capstone-project: tests/spark/ needs a real Spark session
+# and runs on Databricks as a task of f1_end_to_end, not locally.
+
+pytest>=8.0
+
+# tests/test_bundle_contracts.py parses databricks.yml and resources/*.yml.
+pyyaml>=6.0
+
+# f1lake, harvest, app and mcp_server — the Lakebase / RAG / agent layer
+# inherited from f1-strategy-copilot.
+--extra-index-url https://download.pytorch.org/whl/cpu
+requests>=2.31.0
+psycopg2-binary>=2.9.9
+sentence-transformers>=3.0.0
+
+# setup_secrets.py, f1lake.seed_gold's CLI query bridge, and Lakebase secret
+# resolution throughout.
+databricks-sdk>=0.30

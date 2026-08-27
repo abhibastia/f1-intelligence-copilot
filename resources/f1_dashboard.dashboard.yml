@@ -1,0 +1,17 @@
+# AI/BI dashboard reading the Gold layer.
+#
+# The dataset queries use bare table names; `dataset_catalog` and
+# `dataset_schema` bind them at deploy time, so the same dashboard file follows
+# whichever catalog the target sets rather than hardcoding `f1`.
+#
+# Every tile reads Gold only — including the data-quality tile, which is why the
+# pipeline publishes its event log to a Gold table.
+
+resources:
+  dashboards:
+    f1_race_intelligence:
+      display_name: F1 Race Intelligence
+      file_path: ../dashboards/f1_race_intelligence.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: gold

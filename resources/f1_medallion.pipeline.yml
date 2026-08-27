@@ -1,0 +1,43 @@
+# The medallion pipeline: Bronze → Silver → Gold in one triggered pipeline.
+#
+# One pipeline spanning three schemas rather than three pipelines: Free Edition
+# limits concurrency, and a single DAG produces one continuous lineage graph.
+# Datasets use fully-qualified names built from the `f1.catalog` configuration
+# below, so `schema:` here only decides where an unqualified dataset would land.
+
+resources:
+  pipelines:
+    f1_medallion_pipeline:
+      name: f1_medallion_pipeline
+
+      catalog: ${var.catalog}
+      schema: bronze
+
+      serverless: true
+      photon: true
+      # Triggered, not continuous — the source is post-session batch data, and
+      # continuous would retry failed updates indefinitely against a daily quota.
+      continuous: false
+      # CURRENT, not PREVIEW. PREVIEW serves the *next* runtime, so the engine
+      # under this pipeline changes on Databricks' release schedule rather than
+      # ours — a behaviour change during grading week would show up as a
+      # failure in a pipeline whose code has not been touched in a month, with
+      # nothing in git to explain it. CURRENT trades early features, none of
+      # which this pipeline uses, for a runtime that only moves when we say so.
+      channel: CURRENT
+
+      configuration:
+        # Read by every transformation file to build fully-qualified names.
+        f1.catalog: ${var.catalog}
+        f1.landing_root: ${var.landing_root}
+
+      # Publishing the event log to a UC table is what makes data-quality
+      # metrics queryable from SQL and chartable on the dashboard.
+      event_log:
+        catalog: ${var.catalog}
+        schema: gold
+        name: pipeline_event_log
+
+      libraries:
+        - glob:
+            include: ../src/pipeline/**

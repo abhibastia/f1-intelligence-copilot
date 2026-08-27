@@ -1,0 +1,29 @@
+command:
+  - "python"
+  - "app.py"
+
+resources:
+  - name: requirements
+    source:
+      path: ./requirements.txt
+
+env:
+  # Only scope and key NAMES. The Postgres URL stays in the Databricks secret.
+  - name: LAKEBASE_SECRET_SCOPE
+    value: "database"
+  - name: LAKEBASE_SECRET_KEY
+    value: "lakebase-url"
+
+  # Must match the model that built the embeddings; the search box embeds the
+  # query with it. 384 dimensions.
+  - name: EMBEDDING_MODEL
+    value: "sentence-transformers/all-MiniLM-L6-v2"
+  - name: HF_HOME
+    value: "/tmp/.cache/huggingface"
+  - name: SENTENCE_TRANSFORMERS_HOME
+    value: "/tmp/.cache/huggingface"
+
+  # Replace with your own MCP app's URL after deploying it (see README §5,
+  # Step 4) and redeploy — this default is only a placeholder.
+  - name: MCP_SERVER_URL
+    value: "https://f1-intelligence-mcp-<workspace-id>.aws.databricksapps.com"

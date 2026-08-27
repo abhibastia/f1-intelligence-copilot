@@ -1,0 +1,83 @@
+# The gated end-to-end run: test, ingest, build, verify.
+#
+# `f1_ingest_incremental` is the cheap weekly job — ingest, then refresh. This
+# one is what you run by hand after changing pipeline code, and what a CI job
+# would call. It differs in the two tasks bracketing the work:
+#
+#   unit_tests  runs before anything, and a failure means no compute is spent
+#               on a pipeline that was going to fail on a typo.
+#   validate    runs after, and turns "the update completed" into "the marts
+#               reconcile" — which is the actual bar in CLAUDE.md.
+#
+# Deliberately unscheduled. Free Edition has a daily compute quota and this job
+# is roughly twice the cost of the weekly one; it runs when you ask for it.
+#
+#   databricks bundle run f1_end_to_end -t dev --profile <profile>
+
+resources:
+  jobs:
+    f1_end_to_end:
+      name: f1_end_to_end
+
+      tasks:
+        # Spark-backed unit tests over the pipeline's transformation logic:
+        # the lap-time and pit-duration parsers, the three-level laps schema,
+        # and the rule dicts. Cheap, and it fails in seconds rather than after
+        # a cluster start and a graph analysis.
+        - task_key: unit_tests
+          spark_python_task:
+            python_file: ../tests/spark/test_pipeline_transforms.py
+          environment_key: serverless_default
+          # No retries: a failing assertion fails identically the second time,
+          # and re-running it only delays the report.
+          timeout_seconds: 900
+
+        - task_key: ingest
+          depends_on:
+            - task_key: unit_tests
+          spark_python_task:
+            python_file: ../src/ingestion/ingest.py
+            parameters:
+              - --mode
+              - incremental
+              - --root
+              - ${var.landing_root}
+          environment_key: serverless_default
+          max_retries: 2
+          min_retry_interval_millis: 60000
+          timeout_seconds: 2700
+
+        - task_key: refresh_pipeline
+          depends_on:
+            - task_key: ingest
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.f1_medallion_pipeline.id}
+
+        # The executable half of sql/validation_checks.sql. Runs on the job's
+        # serverless compute rather than through the SQL warehouse, so it does
+        # not start a second engine against the same daily quota.
+        - task_key: validate
+          depends_on:
+            - task_key: refresh_pipeline
+          spark_python_task:
+            python_file: ../scripts/validate_marts.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+          environment_key: serverless_default
+          timeout_seconds: 900
+
+      environments:
+        - environment_key: serverless_default
+          spec:
+            client: "3"
+
+      max_concurrent_runs: 1
+
+      # See f1_ingest.job.yml: on Free Edition a hung task spends tomorrow's
+      # allowance too, and silently.
+      timeout_seconds: 3600
+
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}

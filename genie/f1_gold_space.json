@@ -1,0 +1,230 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {
+        "id": "10000000000000000000000000000001",
+        "question": [
+          "Who scored the most points in 2024, and how much came from sprints?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000002",
+        "question": [
+          "Which drivers were quickest on race pace but finished behind it?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000003",
+        "question": [
+          "Did rain actually cause more retirements?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000004",
+        "question": [
+          "Which constructor has the worst reliability this season?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000005",
+        "question": [
+          "Where did teams disagree most on pit strategy, and did going off-strategy pay?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000006",
+        "question": [
+          "Show the championship gap to the leader round by round in 2024"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000007",
+        "question": [
+          "Who won the constructors' championship, and by how much?"
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "identifier": "f1.gold.championship_progression"
+      },
+      {
+        "identifier": "f1.gold.constructor_standings"
+      },
+      {
+        "identifier": "f1.gold.driver_metrics"
+      },
+      {
+        "identifier": "f1.gold.driver_performance"
+      },
+      {
+        "identifier": "f1.gold.lap_pace"
+      },
+      {
+        "identifier": "f1.gold.race_conditions"
+      },
+      {
+        "identifier": "f1.gold.race_strategy"
+      }
+    ]
+  },
+  "instructions": {
+    "example_question_sqls": [
+      {
+        "id": "20000000000000000000000000000001",
+        "question": [
+          "Who scored the most points in 2024, and how much came from sprints?"
+        ],
+        "sql": [
+          "SELECT driver_name,\n",
+          "       SUM(race_points)   AS race_points,\n",
+          "       SUM(sprint_points) AS sprint_points,\n",
+          "       SUM(total_points)  AS total_points\n",
+          "FROM f1.gold.driver_performance\n",
+          "WHERE season = 2024\n",
+          "GROUP BY driver_name\n",
+          "ORDER BY total_points DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000002",
+        "question": [
+          "Which drivers were quickest on race pace but finished behind it?"
+        ],
+        "sql": [
+          "WITH ranked AS (\n",
+          "  SELECT season, round, race_name, driver_name,\n",
+          "         finish_position, pace_deficit_pct,\n",
+          "         RANK() OVER (PARTITION BY season, round ORDER BY median_clean_lap_s) AS pace_rank\n",
+          "  FROM f1.gold.lap_pace\n",
+          "  WHERE NOT dnf_flag\n",
+          ")\n",
+          "SELECT season, round, race_name, driver_name, pace_rank, finish_position,\n",
+          "       finish_position - pace_rank AS places_lost_vs_pace\n",
+          "FROM ranked\n",
+          "WHERE finish_position - pace_rank >= 3\n",
+          "ORDER BY places_lost_vs_pace DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000003",
+        "question": [
+          "Did rain actually cause more retirements?"
+        ],
+        "sql": [
+          "SELECT rainfall_verdict,\n",
+          "       COUNT(*)                              AS races,\n",
+          "       ROUND(AVG(precipitation_mm), 1)       AS avg_rain_mm,\n",
+          "       ROUND(AVG(retirement_rate_pct), 1)    AS avg_retirement_rate_pct\n",
+          "FROM f1.gold.race_conditions\n",
+          "WHERE weather_available\n",
+          "GROUP BY rainfall_verdict\n",
+          "ORDER BY avg_retirement_rate_pct DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000004",
+        "question": [
+          "Did going off-strategy pay?"
+        ],
+        "sql": [
+          "SELECT season, strategy_vs_field,\n",
+          "       COUNT(*)                        AS drivers,\n",
+          "       ROUND(AVG(positions_gained), 2) AS avg_positions_gained\n",
+          "FROM f1.gold.race_strategy\n",
+          "WHERE finish_position IS NOT NULL\n",
+          "GROUP BY season, strategy_vs_field\n",
+          "ORDER BY season, avg_positions_gained DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000005",
+        "question": [
+          "Which constructor has the worst reliability this season?"
+        ],
+        "sql": [
+          "SELECT constructor_name_as_of_race AS team,\n",
+          "       COUNT(*)                                                       AS car_races,\n",
+          "       SUM(CASE WHEN dnf_flag THEN 1 ELSE 0 END)                      AS retirements,\n",
+          "       ROUND(100.0 * AVG(CASE WHEN dnf_flag THEN 1.0 ELSE 0.0 END), 1) AS dnf_rate_pct\n",
+          "FROM f1.gold.driver_performance\n",
+          "WHERE season = (SELECT MAX(season) FROM f1.gold.driver_performance)\n",
+          "  AND constructor_name_as_of_race IS NOT NULL\n",
+          "GROUP BY constructor_name_as_of_race\n",
+          "ORDER BY dnf_rate_pct DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000006",
+        "question": [
+          "Who won the constructors' championship, and by how much?"
+        ],
+        "sql": [
+          "WITH final_round AS (\n",
+          "  SELECT season, MAX(round) AS last_round\n",
+          "  FROM f1.gold.constructor_standings GROUP BY season\n",
+          ")\n",
+          "SELECT s.season, s.championship_position, s.constructor_name,\n",
+          "       s.cumulative_points, s.cumulative_wins, s.gap_to_leader\n",
+          "FROM f1.gold.constructor_standings s\n",
+          "JOIN final_round f ON f.season = s.season AND f.last_round = s.round\n",
+          "ORDER BY s.season DESC, s.championship_position"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000007",
+        "question": [
+          "Which team scored the most points per start last season?"
+        ],
+        "sql": [
+          "SELECT `Team`,\n",
+          "       MEASURE(`Points Per Start`) AS points_per_start,\n",
+          "       MEASURE(`Total Points`)     AS total_points,\n",
+          "       MEASURE(`DNF Rate`)         AS dnf_rate\n",
+          "FROM f1.gold.driver_metrics\n",
+          "WHERE `Season` = (SELECT MAX(season) FROM f1.gold.driver_performance)\n",
+          "GROUP BY ALL\n",
+          "ORDER BY points_per_start DESC"
+        ]
+      }
+    ],
+    "text_instructions": [
+      {
+        "id": "30000000000000000000000000000001",
+        "content": [
+          "This agent answers Formula 1 questions for reporters and fans over six Gold marts and the metric view above them. Never query bronze, silver or raw — the marts already resolve the joins.\n",
+          "\n",
+          "WHICH TABLE ANSWERS WHAT\n",
+          "driver_metrics — a Unity Catalog metric view over driver_performance, and the preferred source for any points, wins, reliability or qualifying aggregate. Measures must be wrapped in MEASURE(): MEASURE(`Total Points`), MEASURE(`DNF Rate`), MEASURE(`Points Per Start`). SELECT * is not supported. Use it rather than re-deriving those aggregates from driver_performance, so the answer matches the dashboard by construction. Dimensions are Season, Round, Race, Circuit, Country, Driver, Team, Qualifying Stage and Result.\n",
+          "driver_performance — one row per driver per race: grid, finish, points, reliability, qualifying. Use for 'who won', 'how many points', 'who retired', 'who gained places'.\n",
+          "championship_progression — one row per driver per round: cumulative points, championship position, gap_to_leader. Use for title-race questions and anything 'after round N'.\n",
+          "constructor_standings — one row per constructor per round: the team-level mirror of championship_progression, read from the published standings endpoint. Use it for 'who won the constructors' championship' and any team title question. Do not sum driver points to answer those — this table is the published figure, and the two are reconciled on every pipeline run.\n",
+          "race_conditions — one row per race: measured weather joined to outcomes. Use for rain, temperature and 'was it chaotic' questions.\n",
+          "race_strategy — one row per driver per race: stops, derived stints, service times, and how that compared with the field. Use for pit-wall questions.\n",
+          "lap_pace — one row per driver per race: clean-lap median, best lap, consistency, laps led, pace_deficit_pct. Use for 'who was actually fast'.\n",
+          "\n",
+          "RULES THAT CHANGE ANSWERS\n",
+          "Points: always use total_points (race + sprint). Summing race_points alone leaves 13 of 24 drivers short of their official 2024 total.\n",
+          "Teams: use constructor_name_as_of_race, which is the team the driver actually drove for at that race. Never assume a driver's current team applies to a past race.\n",
+          "Seasons: the data covers 2024 onward. 'This season' or 'currently' means MAX(season); do not hardcode a year.\n",
+          "Retirements: dnf_flag is the retirement flag. status carries the reason, including 'Disqualified' and 'Lapped'.\n",
+          "\n",
+          "PACE VS RESULT — the distinction this dataset exists for\n",
+          "pace_deficit_pct is how far a driver's median clean lap was off the fastest median in that race; 0 means fastest on the day. Clean laps are those within 107% of that driver's own best, which removes in-laps, out-laps and safety-car laps. Finishing position and pace rank are different questions: rank by median_clean_lap_s to answer 'who was quick', not by finish_position.\n",
+          "\n",
+          "WEATHER — do not overstate it\n",
+          "was_wet means measured daily rainfall crossed 1.0 mm; rainfall_verdict says whether the flag came from rainfall, was under the threshold, or there was no observation at all. weather_available = false means no observation, which is NOT the same as a dry race — never report missing weather as 0 mm. A daily total cannot tell rain that fell overnight from rain that fell during the race, so say 'flagged wet by rainfall' rather than 'it rained during the race'.\n",
+          "\n",
+          "STRATEGY\n",
+          "stints are derived: stints = stops + 1. strategy_vs_field compares a driver's stop count with the field's modal stop count for that race, so 'two stops' only means something relative to what everyone else did. field_stop_spread is the gap between the fewest and most stops and is the best measure of how much teams disagreed.\n",
+          "\n",
+          "ANSWER STYLE\n",
+          "Prefer whole-season aggregates unless a round is named. Round seconds to three decimals and percentages to one. When a result is counter-intuitive — a wet race with low retirements, a quick driver finishing badly — say so explicitly rather than presenting the number alone."
+        ]
+      }
+    ]
+  }
+}

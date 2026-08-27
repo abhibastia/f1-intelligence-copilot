@@ -86,10 +86,10 @@ flowchart TD
 
     LB[("Lakebase Postgres<br/><small>races · documents · embeddings<br/>race_weather · race_strategy_summary ·<br/>lap_pace · constructor_standings ·<br/>stints · watchlist · notes · predictions ·<br/>agent_tool_calls</small>")]
 
-    LB --> MCP["Databricks App 1<br/>MCP server · 17 tools"]
+    LB --> MCP["Databricks App 1<br/>MCP server · 20 tools"]
     LB --> UI["Databricks App 2<br/>Strategy Copilot chat"]
-    UI -. "3 write tools" .-> LB
-    MCP -. "3 write tools" .-> LB
+    UI -. "6 write tools" .-> LB
+    MCP -. "6 write tools" .-> LB
 
     LB --> CDF["f1_cdf_analytics<br/><small>Change Data Feed</small>"] --> DELTA[("Delta<br/>agent_tool_calls <b>CDF on</b><br/>agent_activity_analytics")]
     DELTA --> UI
@@ -136,7 +136,7 @@ than a per-turn cost.
 | `harvest/` | Wikipedia race reports — runs as a Databricks job (`jobs/run_harvest.py`) or locally for testing | copilot |
 | `f1lake/` | Lakebase schema, loaders, embedding, Gold→Lakebase seeding | copilot |
 | `jobs/` | Databricks job entry points for harvest, embed, seed_gold | copilot |
-| `mcp_server/` | MCP server app — 17 tools over streamable HTTP | copilot |
+| `mcp_server/` | MCP server app — 20 tools over streamable HTTP | copilot |
 | `app/` | Strategy Copilot app — frontend, in-process agent, dashboards | copilot |
 | `notebooks/` | CDF→Delta analytics job | copilot |
 | `resources/`, `databricks.yml` | One merged Asset Bundle: pipeline, jobs, dashboard | both |
@@ -342,15 +342,15 @@ python3 scripts/full_refresh.py --with-spark    # Gold seed + CDF job included
 
 ## 6. The agent
 
-**17 tools — 14 read, 3 write.** Full definitions in
+**20 tools — 14 read, 6 write.** Full definitions in
 [`mcp_server/f1_mcp_server.py`](mcp_server/f1_mcp_server.py); the in-app agent
 uses the same `f1_broker` functions so both surfaces run identical code.
 
 | Read | Write |
 |---|---|
-| `get_driver_season` · `compare_constructors` | **`add_to_watchlist`** |
-| `get_championship_standings` · `get_constructor_standings` | **`log_prediction`** |
-| `get_race_weather` · `find_wet_races` | **`save_race_note`** |
+| `get_driver_season` · `compare_constructors` | **`add_to_watchlist`** · **`remove_from_watchlist`** |
+| `get_championship_standings` · `get_constructor_standings` | **`log_prediction`** · **`delete_prediction`** |
+| `get_race_weather` · `find_wet_races` | **`save_race_note`** · **`delete_note`** |
 | `search_race_reports` |  |
 | `get_race_strategy` · `find_strategy_races` |  |
 | `get_race_pace` |  |

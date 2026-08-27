@@ -295,6 +295,12 @@
   .chat-form button { padding:.6rem .9rem; }
   .saved { color:var(--accent-ink); font-weight:600; text-decoration:none; }
   .saved:hover { text-decoration:underline; }
+  .dash-link { display:inline-flex; align-items:center; gap:.4rem;
+               background:var(--accent); color:#fff; font-weight:600;
+               text-decoration:none; padding:.6rem 1rem; border-radius:.5rem;
+               margin-top:.9rem; }
+  .dash-link:hover { opacity:.9; }
+  .dash-link svg { width:1rem; height:1rem; }
   /* Offset anchor jumps so a target section is not hidden under the top of the
      viewport when arriving from the chat. */
   /* Offset anchor jumps so a target is not tucked under the sticky
@@ -519,8 +525,7 @@
   <a href="#standings"><i>04</i>Championship</a>
   <a href="#strategy"><i>05</i>Strategy</a>
   <a href="#activity"><i>06</i>What it saved</a>
-  <a href="#cdf"><i>07</i>Change Data Feed</a>
-  {% if dashboard_url %}<a href="#dashboard"><i>08</i>Dashboard</a>{% endif %}
+  {% if dashboard_url %}<a href="#dashboard"><i>07</i>Dashboard</a>{% endif %}
   </div>
 </nav>
 {% endif %}
@@ -819,110 +824,22 @@
     </div>
   </section>
 
-  <!-- ===================== CDF ANALYTICS ===================== -->
-  <section id="cdf">
-    <h2><span class="num">07</span>Agent activity, via Change Data Feed</h2>
-    <p class="sub">
-      Every tool call the assistant makes is written to the operational store,
-      carried into the analytics table by Change Data Feed, and read back here.
-      This is what the assistant actually did — not what it reported doing.
-    </p>
-
-    {% if analytics.totals %}
-    <div class="stats" style="margin-top:0">
-      <div class="stat"><b>{{ analytics.totals.calls }}</b><span>Tool calls</span></div>
-      <div class="stat"><b>{{ analytics.totals.writes }}</b><span>Writes</span></div>
-      <div class="stat"><b>{{ analytics.totals.errors }}</b><span>Errors</span></div>
-      <div class="stat"><b>{{ analytics.totals.sessions }}</b><span>Sessions</span></div>
-    </div>
-    {% endif %}
-
-    {% if analytics.tools %}
-      {% set top = analytics.tools[0].call_count %}
-      <div class="panel scroll" style="margin-top:1rem">
-        <table>
-          <thead><tr><th>What it did</th><th class="num">Calls</th><th class="num">Writes</th>
-            <th class="num">Errors</th><th class="num">Avg time</th>
-            <th style="width:24%">Share</th></tr></thead>
-          <tbody>
-          {% for t in analytics.tools %}
-            <tr>
-              <td title="{{ t.tool_name }}">{{ t.label }}</td>
-              <td class="num">{{ t.call_count }}</td>
-              <td class="num">{% if t.write_count %}<b style="color:var(--accent-ink)">{{ t.write_count }}</b>{% else %}—{% endif %}</td>
-              <td class="num">{{ t.error_count or "—" }}</td>
-              <td class="num">{% if not t.avg_duration_ms %}—{% elif t.avg_duration_ms >= 1000 %}{{ (t.avg_duration_ms / 1000)|round(1) }}s{% else %}{{ t.avg_duration_ms }} ms{% endif %}</td>
-              <td><div class="bar"><i style="width:{{ (t.call_count / top * 100)|round(1) }}%"></i></div></td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <div class="panel"><div class="empty">
-        No tool calls recorded yet. Ask the assistant something and reload.
-      </div></div>
-    {% endif %}
-
-    {% if sessions %}
-      <p class="sub" style="margin-top:1.6rem">
-        The same record, one conversation at a time: the last
-        {{ sessions|length }} conversations, each showing what was checked or
-        changed, in order, and whether it worked.
-      </p>
-      <div class="sessions">
-        {% for s in sessions %}
-          <div class="ses">
-            <div class="ses-head">
-              <time>{{ s.last_at.strftime("%d %b, %H:%M") }}</time>
-              <span class="ses-meta">
-                {{ s.calls }} call{{ "" if s.calls == 1 else "s" }} ·
-                {% if s.total_ms >= 1000 %}{{ (s.total_ms / 1000)|round(1) }}s{% else %}{{ s.total_ms }} ms{% endif %}
-                {%- if s.writes %} · <b>{{ s.writes }} write{{ "" if s.writes == 1 else "s" }}</b>{% endif %}
-                {%- if s.errors %} · <b class="bad">{{ s.errors }} error{{ "" if s.errors == 1 else "s" }}</b>{% endif %}
-              </span>
-              <code class="ses-id" title="session id">{{ s.session_id[:8] }}</code>
-            </div>
-            <ol class="steps">
-              {% for st in s.steps %}
-                <li class="{{ 'w' if st.is_write else '' }}{{ ' bad' if st.outcome != 'ok' else '' }}"
-                    title="{{ st.tool_name }}">
-                  <span class="step-label">{{ st.label }}</span>
-                  <span class="ms">{% if st.duration_ms and st.duration_ms >= 1000 %}{{ (st.duration_ms / 1000)|round(1) }}s{% else %}{{ st.duration_ms }} ms{% endif %}</span>
-                  {% if st.summary %}<span class="sm">{{ st.summary }}</span>{% endif %}
-                  {% if st.outcome != 'ok' %}<span class="sm">{{ st.outcome }}</span>{% endif %}
-                </li>
-              {% endfor %}
-            </ol>
-          </div>
-        {% endfor %}
-      </div>
-    {% endif %}
-  </section>
-
   {% if dashboard_url %}
   <!-- ===================== AI/BI DASHBOARD ===================== -->
   <section id="dashboard">
-    <h2><span class="num">08</span>Dashboard</h2>
+    <h2><span class="num">07</span>Dashboard</h2>
     <p class="sub">
-      The governed medallion pipeline's own AI/BI dashboard — six decision
-      pages over the same Gold marts this copilot reads, built and refreshed
-      independently of anything on this page.
-      <a href="{{ url_for('dashboard_page') }}" target="_blank" rel="noopener">Open full view ↗</a>
+      The governed medallion pipeline's own AI/BI dashboard — decision pages
+      over the same Gold marts this copilot reads, plus what the assistant has
+      been doing behind the scenes, built and refreshed independently of
+      anything on this page. Databricks won't let it render inside another
+      page, so this opens it directly rather than showing a broken embed.
     </p>
-    <div class="panel" style="padding:0; overflow:hidden">
-      <iframe
-        src="{{ dashboard_url }}"
-        title="F1 Race Intelligence dashboard"
-        style="width:100%; height:70vh; border:0; display:block"
-        loading="lazy">
-      </iframe>
-    </div>
-    <p class="sub" style="margin-top:.5rem; font-size:.8rem">
-      If the panel above stays blank, your workspace doesn't allow dashboards
-      to be framed inside another page — the full-view link opens on this
-      app's own domain either way.
-    </p>
+    <a class="dash-link" href="{{ dashboard_url }}" target="_blank" rel="noopener">
+      Open the dashboard
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+    </a>
   </section>
   {% endif %}
 

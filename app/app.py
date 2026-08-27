@@ -25,7 +25,7 @@ Run locally:
 import logging
 import os
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 import agent
 import f1_broker
@@ -72,8 +72,6 @@ def index():
             races=ui_data.season_races(season) if season else [],
             standings=ui_data.standings(season) if season else [],
             activity=ui_data.agent_activity(),
-            analytics=ui_data.agent_analytics(),
-            sessions=ui_data.recent_sessions(),
             strategy=ui_data.strategy_races(season) if season else [],
             mcp_url=MCP_URL,
             dashboard_url=DASHBOARD_URL,
@@ -86,27 +84,10 @@ def index():
         logger.exception("Could not render the dashboard")
         return render_template(
             "index.html", stats={}, thresholds=[], thesis=[], seasons=[],
-            season=None, races=[], standings=[], activity={},
-            analytics={"tools": [], "totals": {}}, sessions=[], strategy=[],
+            season=None, races=[], standings=[], activity={}, strategy=[],
             mcp_url=MCP_URL, dashboard_url=DASHBOARD_URL,
             error=schema.safe_message(exc),
         )
-
-
-@app.route("/dashboard")
-def dashboard_page():
-    """A same-origin page wrapping the AI/BI dashboard in an iframe.
-
-    Linking straight to the dashboard's own dbc-...cloud.databricks.com URL
-    dropped a visitor into the full Databricks workspace chrome - correct for
-    a workspace user, jarring for someone who was just looking at this app.
-    This route keeps them on f1-intelligence-ui's own domain; the dashboard's
-    own content inside the iframe is still rendered by Databricks (that part
-    can't be reskinned from here), but the page around it is this app's.
-    """
-    if not DASHBOARD_URL:
-        abort(404)
-    return render_template("dashboard.html", dashboard_url=DASHBOARD_URL)
 
 
 # --------------------------------------------------------------------------

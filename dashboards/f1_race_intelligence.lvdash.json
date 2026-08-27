@@ -263,6 +263,37 @@
         "       position_change_vs_prev_round\n",
         "FROM constructor_standings\n"
       ]
+    },
+    {
+      "name": "ds_agent_calls",
+      "displayName": "Assistant tool calls",
+      "queryLines": [
+        "SELECT id, session_id, DATE(called_at) AS call_date,\n",
+        "  CASE tool_name\n    WHEN 'get_driver_season' THEN 'Looked up a driver''s season'\n    WHEN 'compare_constructors' THEN 'Compared two constructors'\n    WHEN 'get_championship_standings' THEN 'Checked the drivers'' standings'\n    WHEN 'get_constructor_standings' THEN 'Checked the constructors'' standings'\n    WHEN 'get_race_weather' THEN 'Checked measured race-day weather'\n    WHEN 'find_wet_races' THEN 'Found races with heavy rainfall'\n    WHEN 'search_race_reports' THEN 'Searched race reports'\n    WHEN 'get_race_strategy' THEN 'Checked pit-stop strategy'\n    WHEN 'find_strategy_races' THEN 'Found races with varied strategy'\n    WHEN 'get_race_pace' THEN 'Checked race pace'\n    WHEN 'get_season_schedule' THEN 'Checked the season schedule'\n    WHEN 'get_watchlist' THEN 'Checked the watchlist'\n    WHEN 'get_predictions' THEN 'Checked logged predictions'\n    WHEN 'get_race_notes' THEN 'Checked saved notes'\n    WHEN 'add_to_watchlist' THEN 'Added to the watchlist'\n    WHEN 'log_prediction' THEN 'Logged a prediction'\n    WHEN 'save_race_note' THEN 'Saved a note'\n    WHEN 'remove_from_watchlist' THEN 'Removed from the watchlist'\n    WHEN 'delete_prediction' THEN 'Deleted a prediction'\n    WHEN 'delete_note' THEN 'Deleted a note'\n    ELSE tool_name\n  END AS tool_label,\n",
+        "  CAST(is_write AS INT) AS is_write_n,\n",
+        "  CASE WHEN outcome = 'ok' THEN 0 ELSE 1 END AS is_error_n,\n",
+        "  duration_ms\n",
+        "FROM agent_tool_calls\n",
+        "WHERE tool_name NOT LIKE 'test\\_%' ESCAPE '\\\\'\n"
+      ]
+    },
+    {
+      "name": "ds_agent_tools",
+      "displayName": "Assistant tool calls, by tool",
+      "queryLines": [
+        "SELECT tool_label, COUNT(id) AS calls, SUM(is_write_n) AS writes,\n",
+        "       SUM(is_error_n) AS errors, ROUND(AVG(duration_ms)) AS avg_ms\n",
+        "FROM (\n",
+        "  SELECT id,\n",
+        "    CASE tool_name\n    WHEN 'get_driver_season' THEN 'Looked up a driver''s season'\n    WHEN 'compare_constructors' THEN 'Compared two constructors'\n    WHEN 'get_championship_standings' THEN 'Checked the drivers'' standings'\n    WHEN 'get_constructor_standings' THEN 'Checked the constructors'' standings'\n    WHEN 'get_race_weather' THEN 'Checked measured race-day weather'\n    WHEN 'find_wet_races' THEN 'Found races with heavy rainfall'\n    WHEN 'search_race_reports' THEN 'Searched race reports'\n    WHEN 'get_race_strategy' THEN 'Checked pit-stop strategy'\n    WHEN 'find_strategy_races' THEN 'Found races with varied strategy'\n    WHEN 'get_race_pace' THEN 'Checked race pace'\n    WHEN 'get_season_schedule' THEN 'Checked the season schedule'\n    WHEN 'get_watchlist' THEN 'Checked the watchlist'\n    WHEN 'get_predictions' THEN 'Checked logged predictions'\n    WHEN 'get_race_notes' THEN 'Checked saved notes'\n    WHEN 'add_to_watchlist' THEN 'Added to the watchlist'\n    WHEN 'log_prediction' THEN 'Logged a prediction'\n    WHEN 'save_race_note' THEN 'Saved a note'\n    WHEN 'remove_from_watchlist' THEN 'Removed from the watchlist'\n    WHEN 'delete_prediction' THEN 'Deleted a prediction'\n    WHEN 'delete_note' THEN 'Deleted a note'\n    ELSE tool_name\n  END AS tool_label,\n",
+        "    CAST(is_write AS INT) AS is_write_n,\n",
+        "    CASE WHEN outcome = 'ok' THEN 0 ELSE 1 END AS is_error_n,\n",
+        "    duration_ms\n",
+        "  FROM agent_tool_calls\n",
+        "  WHERE tool_name NOT LIKE 'test\\_%' ESCAPE '\\\\'\n",
+        ") t\n",
+        "GROUP BY tool_label ORDER BY calls DESC\n"
+      ]
     }
   ],
   "pages": [
@@ -277,7 +308,7 @@
             "name": "t_standings",
             "multilineTextboxSpec": {
               "lines": [
-                "## Standings — where the season finished"
+                "## Standings \u2014 where the season finished"
               ]
             }
           },
@@ -778,7 +809,7 @@
             "name": "t_form",
             "multilineTextboxSpec": {
               "lines": [
-                "## Driver form and deployment — who is over-performing their car?"
+                "## Driver form and deployment \u2014 who is over-performing their car?"
               ]
             }
           },
@@ -1070,7 +1101,7 @@
                 "showTitle": true,
                 "title": "Over- and under-performing the machinery",
                 "showDescription": true,
-                "description": "Driver's clean-lap pace minus their team's average. Negative is quicker than the car's norm — check the race count in the table below, a two-race sample is not form."
+                "description": "Driver's clean-lap pace minus their team's average. Negative is quicker than the car's norm \u2014 check the race count in the table below, a two-race sample is not form."
               }
             }
           },
@@ -1164,7 +1195,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Saturday against Sunday — qualifying vs. finishing position",
+                "title": "Saturday against Sunday \u2014 qualifying vs. finishing position",
                 "showDescription": true,
                 "description": "Below the diagonal means places gained. The green cloud is where races are won from."
               }
@@ -1182,7 +1213,7 @@
             "name": "t_form_table",
             "multilineTextboxSpec": {
               "lines": [
-                "### Season form — sample size included, because pace-vs-team is noisy below ~5 races"
+                "### Season form \u2014 sample size included, because pace-vs-team is noisy below ~5 races"
               ]
             }
           },
@@ -1339,7 +1370,7 @@
             "name": "t_team",
             "multilineTextboxSpec": {
               "lines": [
-                "## Constructor benchmarking — where are points won and lost?"
+                "## Constructor benchmarking \u2014 where are points won and lost?"
               ]
             }
           },
@@ -1510,7 +1541,7 @@
                 "showTitle": true,
                 "title": "Mean pit stop",
                 "showDescription": true,
-                "description": "Service time only — red-flag stoppages excluded"
+                "description": "Service time only \u2014 red-flag stoppages excluded"
               }
             }
           },
@@ -1755,7 +1786,7 @@
             "name": "t_team_table",
             "multilineTextboxSpec": {
               "lines": [
-                "### The scorecard — quali, race pace, pit execution and reliability side by side"
+                "### The scorecard \u2014 quali, race pace, pit execution and reliability side by side"
               ]
             }
           },
@@ -1913,7 +1944,7 @@
             "name": "t_team_strategy",
             "multilineTextboxSpec": {
               "lines": [
-                "### The pit wall — the fourth place points are won and lost"
+                "### The pit wall \u2014 the fourth place points are won and lost"
               ]
             }
           },
@@ -2033,7 +2064,7 @@
                 "showTitle": true,
                 "title": "Did going off-strategy pay?",
                 "showDescription": true,
-                "description": "Running the field's strategy gains about 0.7 places. Deviating in either direction loses them — which is the argument for knowing the circuit prior before the weekend."
+                "description": "Running the field's strategy gains about 0.7 places. Deviating in either direction loses them \u2014 which is the argument for knowing the circuit prior before the weekend."
               }
             }
           },
@@ -2057,7 +2088,7 @@
             "name": "t_circuit",
             "multilineTextboxSpec": {
               "lines": [
-                "## Circuit priors — what usually works here?"
+                "## Circuit priors \u2014 what usually works here?"
               ]
             }
           },
@@ -2378,7 +2409,7 @@
                 "showTitle": true,
                 "title": "Where track position decides it",
                 "showDescription": true,
-                "description": "100% means pole always won. Read alongside the overtaking index — they should disagree."
+                "description": "100% means pole always won. Read alongside the overtaking index \u2014 they should disagree."
               }
             }
           },
@@ -2454,7 +2485,7 @@
             "name": "t_circuit_table",
             "multilineTextboxSpec": {
               "lines": [
-                "### The prior — what to expect before the weekend starts"
+                "### The prior \u2014 what to expect before the weekend starts"
               ]
             }
           },
@@ -2585,7 +2616,7 @@
             "name": "t_circuit_weather",
             "multilineTextboxSpec": {
               "lines": [
-                "### Conditions — what the weather does here, and what it does not"
+                "### Conditions \u2014 what the weather does here, and what it does not"
               ]
             }
           },
@@ -2627,7 +2658,7 @@
                 "showTitle": true,
                 "title": "Races flagged wet",
                 "showDescription": true,
-                "description": "Measured daily rainfall at or above 1.0 mm — not a report of rain during the race"
+                "description": "Measured daily rainfall at or above 1.0 mm \u2014 not a report of rain during the race"
               }
             }
           },
@@ -2922,7 +2953,7 @@
                 "showTitle": true,
                 "title": "Does rain change the racing?",
                 "showDescription": true,
-                "description": "If wet races produced more overtaking, these bars would separate. Read it with the scatter — the honest answer here is that they barely do."
+                "description": "If wet races produced more overtaking, these bars would separate. Read it with the scatter \u2014 the honest answer here is that they barely do."
               }
             }
           },
@@ -3021,7 +3052,7 @@
                   },
                   {
                     "fieldName": "temp_max_c",
-                    "displayName": "Max temp °C",
+                    "displayName": "Max temp \u00b0C",
                     "type": "float"
                   },
                   {
@@ -3079,7 +3110,7 @@
             "name": "t_champ",
             "multilineTextboxSpec": {
               "lines": [
-                "## Championship swing — which rounds decided the title?"
+                "## Championship swing \u2014 which rounds decided the title?"
               ]
             }
           },
@@ -3388,7 +3419,7 @@
               },
               "frame": {
                 "showTitle": true,
-                "title": "Gap to the leader — the swing view",
+                "title": "Gap to the leader \u2014 the swing view",
                 "showDescription": true,
                 "description": "A rising line is a title slipping away. Flat at zero is the driver leading."
               }
@@ -3570,7 +3601,7 @@
             "name": "t_dq_sub",
             "multilineTextboxSpec": {
               "lines": [
-                "Every expectation the pipeline evaluated, per dataset per run. A rejected row is routed to a quarantine table with the rule it violated — never dropped silently."
+                "Every expectation the pipeline evaluated, per dataset per run. A rejected row is routed to a quarantine table with the rule it violated \u2014 never dropped silently."
               ]
             }
           },
@@ -3781,6 +3812,350 @@
             "y": 5,
             "width": 12,
             "height": 8
+          }
+        }
+      ]
+    },
+    {
+      "name": "page_activity",
+      "displayName": "Assistant Activity",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "act_header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## What the assistant has been doing"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "act_sub",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Every tool call the copilot app makes is written to Lakebase, carried into this Delta table by Change Data Feed, and read back here \u2014 what the assistant actually did, not what it reported doing."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "act_k_calls",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agent_calls",
+                  "fields": [
+                    {
+                      "name": "count(id)",
+                      "expression": "COUNT(`id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(id)",
+                  "displayName": "Tool calls"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Tool calls"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "act_k_sessions",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agent_calls",
+                  "fields": [
+                    {
+                      "name": "countdistinct(session_id)",
+                      "expression": "COUNT(DISTINCT `session_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(session_id)",
+                  "displayName": "Sessions"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Sessions"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "act_k_writes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agent_calls",
+                  "fields": [
+                    {
+                      "name": "sum(is_write_n)",
+                      "expression": "SUM(`is_write_n`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(is_write_n)",
+                  "displayName": "Writes"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Writes"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "act_k_errors",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agent_calls",
+                  "fields": [
+                    {
+                      "name": "sum(is_error_n)",
+                      "expression": "SUM(`is_error_n`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(is_error_n)",
+                  "displayName": "Errors"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Errors"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "act_b_calls_by_day",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agent_calls",
+                  "fields": [
+                    {
+                      "name": "call_date",
+                      "expression": "`call_date`"
+                    },
+                    {
+                      "name": "count(id)",
+                      "expression": "COUNT(`id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "call_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Date"
+                },
+                "y": {
+                  "fieldName": "count(id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Tool calls"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Tool calls per day"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "act_tbl_header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## By tool"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "act_tbl_tools",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_agent_tools",
+                  "fields": [
+                    {
+                      "name": "tool_label",
+                      "expression": "`tool_label`"
+                    },
+                    {
+                      "name": "calls",
+                      "expression": "`calls`"
+                    },
+                    {
+                      "name": "writes",
+                      "expression": "`writes`"
+                    },
+                    {
+                      "name": "errors",
+                      "expression": "`errors`"
+                    },
+                    {
+                      "name": "avg_ms",
+                      "expression": "`avg_ms`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "tool_label",
+                    "displayName": "What it did"
+                  },
+                  {
+                    "fieldName": "calls",
+                    "displayName": "Calls"
+                  },
+                  {
+                    "fieldName": "writes",
+                    "displayName": "Writes"
+                  },
+                  {
+                    "fieldName": "errors",
+                    "displayName": "Errors"
+                  },
+                  {
+                    "fieldName": "avg_ms",
+                    "displayName": "Avg ms"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "By tool"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 6
           }
         }
       ]

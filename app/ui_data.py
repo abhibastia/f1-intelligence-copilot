@@ -21,37 +21,6 @@ from f1lake import embedder, schema
 
 logger = logging.getLogger("ui-data")
 
-# Tool names as they appear in agent_tool_calls are the Python identifiers
-# f1_broker/f1_mcp_server use - accurate, but written for someone reading the
-# code, not for someone deciding whether to trust the assistant. This is the
-# same information in the words a reader would use to describe what happened.
-TOOL_LABELS = {
-    "get_driver_season": "Looked up a driver's season",
-    "compare_constructors": "Compared two constructors",
-    "get_championship_standings": "Checked the drivers' standings",
-    "get_constructor_standings": "Checked the constructors' standings",
-    "get_race_weather": "Checked measured race-day weather",
-    "find_wet_races": "Found races with heavy rainfall",
-    "search_race_reports": "Searched race reports",
-    "get_race_strategy": "Checked pit-stop strategy",
-    "find_strategy_races": "Found races with varied strategy",
-    "get_race_pace": "Checked race pace",
-    "get_season_schedule": "Checked the season schedule",
-    "get_watchlist": "Checked the watchlist",
-    "get_predictions": "Checked logged predictions",
-    "get_race_notes": "Checked saved notes",
-    "add_to_watchlist": "Added to the watchlist",
-    "log_prediction": "Logged a prediction",
-    "save_race_note": "Saved a note",
-    "remove_from_watchlist": "Removed from the watchlist",
-    "delete_prediction": "Deleted a prediction",
-    "delete_note": "Deleted a note",
-}
-
-
-def _label(tool_name: str) -> str:
-    return TOOL_LABELS.get(tool_name, tool_name)
-
 # The four races that make the project's central point: near-identical daily
 # rainfall, opposite race outcomes. Pinned rather than computed so the panel
 # always tells the same story, with the numbers themselves read live.
@@ -193,95 +162,6 @@ def search(query: str, top_k: int = 6, season: int | None = None) -> list[dict]:
         ORDER BY e.embedding <=> %s::vector
         LIMIT %s
     """, tuple(params))
-
-
-def agent_analytics() -> dict:
-    """Per-tool analytics materialised from the Change Data Feed.
-
-    Read from Lakebase rather than from the Delta table the CDF job writes:
-    querying Delta per page render would spend a SQL warehouse query every time
-    someone loads the page, which on Free Edition's daily quota is exactly the
-    behaviour that kills a demo. The Delta table is the analytical record; this
-    aggregate mirrors it for serving.
-
-    `cdf_materialised` reports whether the CDF job has run, so the page can say
-    "not yet materialised" instead of implying the loop does not exist.
-    """
-    tools = schema.query(f"""
-        SELECT tool_name,
-               count(*)                                              AS call_count,
-               count(*) FILTER (WHERE is_write)                      AS write_count,
-               count(*) FILTER (WHERE outcome <> 'ok')               AS error_count,
-               round(avg(duration_ms))                               AS avg_duration_ms,
-               count(DISTINCT session_id)                            AS sessions,
-               max(called_at)                                        AS last_called_at
-        FROM {schema.TOOL_CALLS}
-        WHERE tool_name NOT LIKE 'test\\_%%' ESCAPE '\\'
-        GROUP BY tool_name ORDER BY call_count DESC""")
-    for t in tools:
-        t["label"] = _label(t["tool_name"])
-    totals = schema.query(f"""
-        SELECT count(*) AS calls,
-               count(*) FILTER (WHERE is_write)        AS writes,
-               count(*) FILTER (WHERE outcome <> 'ok') AS errors,
-               count(DISTINCT session_id)              AS sessions
-        FROM {schema.TOOL_CALLS}
-        WHERE tool_name NOT LIKE 'test\\_%%' ESCAPE '\\'""")[0]
-    return {"tools": tools, "totals": totals}
-
-
-def recent_sessions(limit: int = 6) -> list[dict]:
-    """The last few conversations, each with the calls it made in order.
-
-    The per-tool aggregate above says `get_race_weather` was called 31 times at
-    an average of 240 ms. True, and impossible to picture. What a reader wants
-    to know is what one conversation actually did: which tools, in what order,
-    how long each took and whether it worked. That is the same Change Data Feed
-    data at the grain it is legible at.
-
-    Grouped by session rather than listed flat because the ordering within a
-    conversation is the interesting part - a weather call followed by two
-    searches is a visible reasoning path, where the same three rows shuffled
-    together with other sessions' calls are noise.
-    """
-    rows = schema.query(f"""
-        WITH recent AS (
-            SELECT session_id,
-                   max(called_at)                          AS last_at,
-                   count(*)                                AS calls,
-                   sum(duration_ms)                        AS total_ms,
-                   count(*) FILTER (WHERE is_write)        AS writes,
-                   count(*) FILTER (WHERE outcome <> 'ok') AS errors
-            FROM {schema.TOOL_CALLS}
-            WHERE tool_name NOT LIKE 'test\\_%%' ESCAPE '\\'
-            GROUP BY session_id
-            ORDER BY max(called_at) DESC
-            LIMIT %s
-        )
-        SELECT c.session_id, c.called_at, c.tool_name, c.is_write, c.outcome,
-               c.summary, c.duration_ms,
-               r.last_at, r.calls, r.total_ms, r.writes, r.errors
-        FROM {schema.TOOL_CALLS} c
-        JOIN recent r ON r.session_id = c.session_id
-        WHERE c.tool_name NOT LIKE 'test\\_%%' ESCAPE '\\'
-        ORDER BY r.last_at DESC, c.id""", (max(1, min(int(limit), 20)),))
-
-    sessions: list[dict] = []
-    for row in rows:
-        if not sessions or sessions[-1]["session_id"] != row["session_id"]:
-            sessions.append({
-                "session_id": row["session_id"],
-                "last_at": row["last_at"], "calls": row["calls"],
-                "total_ms": row["total_ms"], "writes": row["writes"],
-                "errors": row["errors"], "steps": [],
-            })
-        sessions[-1]["steps"].append({
-            "tool_name": row["tool_name"], "label": _label(row["tool_name"]),
-            "is_write": row["is_write"],
-            "outcome": row["outcome"], "summary": row["summary"],
-            "duration_ms": row["duration_ms"],
-        })
-    return sessions
 
 
 def strategy_races(season: int, limit: int = 12) -> list[dict]:

@@ -74,7 +74,7 @@ flowchart TD
     J --> ING --> VOL[("UC Volume<br/>f1.raw.landing")] --> MED
     MED --> GOLD[("Delta Gold<br/>6 marts: driver_performance ·<br/>championship_progression · race_conditions ·<br/>race_strategy · lap_pace · constructor_standings")]
 
-    GOLD --> DASH["AI/BI Dashboard<br/><small>6 decision pages</small>"]
+    GOLD --> DASH["AI/BI Dashboard<br/><small>7 decision pages</small>"]
     GOLD --> GENIE["Genie space<br/><small>NL → SQL over Gold</small>"]
 
     W --> HAR
@@ -128,7 +128,7 @@ than a per-turn cost.
 |---|---|---|
 | `src/ingestion/`, `src/pipeline/` | **Governed Spark medallion**: ingestion, Bronze→Gold (6 marts), SCD-2 | capstone |
 | `sql/` | Validation checks, data-quality event-log queries, the `driver_metrics` metric view | capstone |
-| `dashboards/` | AI/BI dashboard definition — 6 decision pages | capstone |
+| `dashboards/` | AI/BI dashboard definition — 7 decision pages | capstone |
 | `genie/` | Genie space scoped to Gold + the metric view | capstone |
 | `docs/architecture.md` | Pipeline design record and data dictionary | capstone |
 | `docs/copilot_design.md` | Agent/RAG design record | copilot |

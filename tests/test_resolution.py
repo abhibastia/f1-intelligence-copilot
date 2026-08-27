@@ -152,33 +152,6 @@ class TestSeasonSchedule:
         assert "has not been raced yet" in result["message"]
 
 
-class TestSessionTimeline:
-    """The per-tool aggregate says get_race_weather ran 16 times averaging
-    2.2 s. True, and impossible to picture. The session view shows one
-    conversation's calls in order, which is where the reasoning path is."""
-
-    def test_steps_stay_in_call_order(self, broker):
-        import sys, os
-        sys.path.insert(0, os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app"))
-        import ui_data
-        for session in ui_data.recent_sessions(5):
-            assert session["steps"], "a session with no calls should not be listed"
-            assert session["calls"] == len(session["steps"]), \
-                "the header count must match the steps actually shown"
-
-    def test_test_telemetry_is_excluded(self, broker):
-        """pytest logs a `test_tool` call of its own. It is not something the
-        agent did, and showing it in the app would misreport the agent's work."""
-        import sys, os
-        sys.path.insert(0, os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app"))
-        import ui_data
-        names = {s["tool_name"] for ses in ui_data.recent_sessions(20)
-                 for s in ses["steps"]}
-        assert not any(n.startswith("test_") for n in names)
-
-
 class TestRenamedRaces:
     """Races get renamed. Interlagos is the São Paulo Grand Prix in 2024 and the
     Brazilian Grand Prix in 2026; Catalunya is Spanish then Barcelona. Asking

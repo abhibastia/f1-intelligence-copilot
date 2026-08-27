@@ -43,7 +43,7 @@ flowchart TB
         G["<b>Gold</b> · materialized views<br/><small>business marts · batch read<br/>clustered by season, round</small>"]
     end
 
-    D["AI/BI Dashboard<br/><small>SQL warehouse · 6 decision pages</small>"]
+    D["AI/BI Dashboard<br/><small>SQL warehouse · 7 decision pages</small>"]
     Q[("Quarantine tables<br/><small>rejected rows + reason</small>")]
     E[("Pipeline event log<br/><small>f1.gold.pipeline_event_log</small>")]
 

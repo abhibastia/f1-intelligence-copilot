@@ -507,6 +507,7 @@
   <a href="#strategy"><i>05</i>Strategy</a>
   <a href="#activity"><i>06</i>What it saved</a>
   <a href="#cdf"><i>07</i>Change Data Feed</a>
+  {% if dashboard_url %}<a href="#dashboard"><i>08</i>Dashboard</a>{% endif %}
   </div>
 </nav>
 {% endif %}
@@ -859,6 +860,31 @@
       </div>
     {% endif %}
   </section>
+
+  {% if dashboard_url %}
+  <!-- ===================== AI/BI DASHBOARD ===================== -->
+  <section id="dashboard">
+    <h2><span class="num">08</span>Dashboard</h2>
+    <p class="sub">
+      The governed medallion pipeline's own AI/BI dashboard — six decision
+      pages over the same Gold marts this copilot reads, built and refreshed
+      independently of anything on this page.
+      <a href="{{ dashboard_url }}" target="_blank" rel="noopener">Open in a new tab ↗</a>
+    </p>
+    <div class="panel" style="padding:0; overflow:hidden">
+      <iframe
+        src="{{ dashboard_url }}"
+        title="F1 Race Intelligence dashboard"
+        style="width:100%; height:70vh; border:0; display:block"
+        loading="lazy">
+      </iframe>
+    </div>
+    <p class="sub" style="margin-top:.5rem; font-size:.8rem">
+      If the panel above stays blank, your workspace doesn't allow dashboards
+      to be framed inside another page — the link is the reliable path either way.
+    </p>
+  </section>
+  {% endif %}
 
 {% endif %}
 

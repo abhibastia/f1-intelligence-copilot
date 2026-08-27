@@ -25,3 +25,10 @@ env:
 
   - name: MCP_SERVER_URL
     value: "https://f1-intelligence-mcp-7474646797973312.aws.databricksapps.com"
+
+  # The published AI/BI dashboard (dashboards/f1_race_intelligence.lvdash.json).
+  # Re-publish and update this after `databricks bundle deploy` if the
+  # dashboard is ever recreated (its id changes) - find the current one with
+  # `databricks bundle summary -t dev --profile <profile>`.
+  - name: DASHBOARD_URL
+    value: "https://dbc-6b3a5534-db75.cloud.databricks.com/dashboardsv3/01f1a228d369198a88016cffafd7ef4f/published?w=7474646797973312"

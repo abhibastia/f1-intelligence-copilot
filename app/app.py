@@ -37,6 +37,11 @@ MCP_URL = os.environ.get(
     "https://f1-intelligence-mcp-<workspace-id>.aws.databricksapps.com",
 )
 
+# The published AI/BI dashboard (dashboards/f1_race_intelligence.lvdash.json).
+# Set by app.yaml after `databricks bundle deploy` publishes it - find yours
+# with `databricks bundle summary` or `databricks lakeview list`.
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "")
+
 
 @app.route("/healthz")
 def healthz():
@@ -66,6 +71,7 @@ def index():
             sessions=ui_data.recent_sessions(),
             strategy=ui_data.strategy_races(season) if season else [],
             mcp_url=MCP_URL,
+            dashboard_url=DASHBOARD_URL,
             error=None,
         )
     except Exception as exc:
@@ -77,7 +83,8 @@ def index():
             "index.html", stats={}, thresholds=[], thesis=[], seasons=[],
             season=None, races=[], standings=[], activity={},
             analytics={"tools": [], "totals": {}}, sessions=[], strategy=[],
-            mcp_url=MCP_URL, error=schema.safe_message(exc),
+            mcp_url=MCP_URL, dashboard_url=DASHBOARD_URL,
+            error=schema.safe_message(exc),
         )
 
 

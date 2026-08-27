@@ -425,3 +425,9 @@ streaming-compatible `agent_tool_calls` table.
 - [`docs/runbook.md`](docs/runbook.md) — operations and failure modes
 - [`CLAUDE.md`](CLAUDE.md) — standing constraints, read before changing
   anything
+
+---
+
+## License
+
+[MIT](LICENSE).

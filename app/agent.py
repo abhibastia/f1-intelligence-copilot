@@ -176,9 +176,16 @@ TOOLS = [
      {"season": ("integer", "Championship year"),
       "race": ("string", "Round number or race name"),
       "note": ("string", "The note text")}, ["season", "race", "note"]),
+    ("remove_from_watchlist", "WRITE. Remove a watchlist entry by id.",
+     {"item_id": ("integer", "The watchlist row's id")}, ["item_id"]),
+    ("delete_prediction", "WRITE. Delete a logged prediction by id.",
+     {"item_id": ("integer", "The prediction row's id")}, ["item_id"]),
+    ("delete_note", "WRITE. Delete a saved race note by id.",
+     {"item_id": ("integer", "The note row's id")}, ["item_id"]),
 ]
 
-WRITE_TOOLS = {"add_to_watchlist", "log_prediction", "save_race_note"}
+WRITE_TOOLS = {"add_to_watchlist", "log_prediction", "save_race_note",
+               "remove_from_watchlist", "delete_prediction", "delete_note"}
 
 DISPATCH = {
     "get_driver_season": lambda a: f1_broker.driver_season(a["driver"], a["season"]),
@@ -205,6 +212,9 @@ DISPATCH = {
         a["season"], a["race"], a["prediction"],
         a.get("confidence", "medium"), a.get("rationale")),
     "save_race_note": lambda a: f1_broker.save_note(a["season"], a["race"], a["note"]),
+    "remove_from_watchlist": lambda a: f1_broker.remove_from_watchlist(a["item_id"]),
+    "delete_prediction": lambda a: f1_broker.delete_prediction(a["item_id"]),
+    "delete_note": lambda a: f1_broker.delete_note(a["item_id"]),
 }
 
 

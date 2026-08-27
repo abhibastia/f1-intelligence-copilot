@@ -697,3 +697,53 @@ def get_predictions(season: int | None = None, user_id: str = "default",
         tuple(params),
     )
     return {"count": len(rows), "predictions": rows}
+
+
+# --------------------------------------------------------------------------
+# Deletes — same write path as add/log/save, callable from chat or the UI
+# --------------------------------------------------------------------------
+#
+# The UI's delete buttons call these directly (see app.py's /api/*/delete
+# routes), bypassing the LLM - deletion is a deterministic "remove row N"
+# operation, not something that benefits from being phrased as a sentence and
+# resolved by a model. The same functions are also exposed as MCP/agent tools
+# below, so "remove Verstappen from my watchlist" still works from chat and
+# still shows up in the trace and in the Change Data Feed loop like any other
+# write. One implementation, two ways to trigger it - the project's existing
+# pattern for everything else in this module.
+#
+# WHERE id = %s AND user_id = %s together, always: user_id scopes every delete
+# to its owner, so one user can never delete another's row even if they guess
+# an id. RETURNING id is how a "not found" is distinguished from "deleted".
+
+def remove_from_watchlist(item_id: int, user_id: str = "default") -> dict:
+    rows = schema.returning(
+        f"""DELETE FROM {schema.WATCHLIST} WHERE id = %s AND user_id = %s
+            RETURNING id, entity_type, entity_ref""",
+        (int(item_id), user_id),
+    )
+    if not rows:
+        raise ValueError(f"No watchlist entry {item_id} for this user")
+    return {"written": True, "action": "remove_from_watchlist", "row": rows[0]}
+
+
+def delete_prediction(item_id: int, user_id: str = "default") -> dict:
+    rows = schema.returning(
+        f"""DELETE FROM {schema.PREDICTIONS} WHERE id = %s AND user_id = %s
+            RETURNING id, season, round, prediction""",
+        (int(item_id), user_id),
+    )
+    if not rows:
+        raise ValueError(f"No prediction {item_id} for this user")
+    return {"written": True, "action": "delete_prediction", "row": rows[0]}
+
+
+def delete_note(item_id: int, user_id: str = "default") -> dict:
+    rows = schema.returning(
+        f"""DELETE FROM {schema.NOTES} WHERE id = %s AND user_id = %s
+            RETURNING id, season, round, note""",
+        (int(item_id), user_id),
+    )
+    if not rows:
+        raise ValueError(f"No note {item_id} for this user")
+    return {"written": True, "action": "delete_note", "row": rows[0]}

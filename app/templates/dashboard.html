@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — F1 Intelligence Copilot</title>
+<style>
+  /* Same theme tokens as index.html, kept in sync by hand since this is a
+     one-off wrapper page rather than a second template extending a shared
+     base - see index.html's own comment for why the layering order matters. */
+  :root {
+    color-scheme: dark;
+    --bg:#0b0d11; --panel:#131720; --line:#242b3a;
+    --fg:#e8ecf4; --muted:#8b95a8; --dim:#5c6679;
+    --accent:#e8112d; --accent-ink:#ff3b52;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      color-scheme: light;
+      --bg:#f7f8fa; --panel:#ffffff; --line:#dde1e9;
+      --fg:#12151c; --muted:#5c6679; --dim:#8b95a8; --accent-ink:#c60a22;
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg:#f7f8fa; --panel:#ffffff; --line:#dde1e9;
+    --fg:#12151c; --muted:#5c6679; --dim:#8b95a8; --accent-ink:#c60a22;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#0b0d11; --panel:#131720; --line:#242b3a;
+    --fg:#e8ecf4; --muted:#8b95a8; --dim:#5c6679; --accent-ink:#ff3b52;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; }
+  body { display:flex; flex-direction:column; background:var(--bg); color:var(--fg);
+         font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+         -webkit-font-smoothing:antialiased; }
+  a { color:inherit; }
+  header { display:flex; align-items:center; gap:.75rem; padding:.75rem 1.1rem;
+           border-bottom:1px solid var(--line); background:var(--panel); flex:none; }
+  .back { display:flex; align-items:center; gap:.35rem; color:var(--muted);
+          text-decoration:none; font-size:.85rem; padding:.35rem .6rem;
+          border-radius:.4rem; }
+  .back:hover { color:var(--fg); background:var(--bg); }
+  .back svg { width:1rem; height:1rem; }
+  h1 { font-size:.95rem; margin:0; letter-spacing:-.01em; }
+  .sub { color:var(--dim); font-size:.75rem; margin-left:auto; }
+  .frame-wrap { flex:1; min-height:0; }
+  iframe { width:100%; height:100%; border:0; display:block; }
+</style>
+</head>
+<body>
+
+<script>
+  // Applied before paint so this page doesn't flash the wrong theme for
+  // anyone who already chose one on the main page - same key, same logic.
+  (function () {
+    const saved = localStorage.getItem("f1-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  })();
+</script>
+
+<header>
+  <a class="back" href="/">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    Back to copilot
+  </a>
+  <h1>F1 Race Intelligence — dashboard</h1>
+  <span class="sub">Rendered by Databricks · six decision pages over Gold</span>
+</header>
+
+<div class="frame-wrap">
+  <iframe src="{{ dashboard_url }}" title="F1 Race Intelligence dashboard" loading="eager"></iframe>
+</div>
+
+</body>
+</html>

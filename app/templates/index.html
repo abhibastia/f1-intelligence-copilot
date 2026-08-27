@@ -178,6 +178,15 @@
              padding:.9rem 1.1rem; border-radius:.5rem; margin-bottom:1.1rem; }
   .finding b { color:var(--accent-ink); }
   .cards { display:grid; gap:.85rem; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); }
+  /* Delete button: a plain form post, no JS - works even if a script fails to
+     load, which matters more here than almost anywhere else on the page,
+     since this is the one control that changes data. */
+  .del-cell { width:1.6rem; padding:0 !important; vertical-align:top; }
+  .del-cell form { margin:0; }
+  .del-btn { background:none; border:none; color:var(--dim); cursor:pointer;
+             font-size:1.1rem; line-height:1; padding:.15rem .4rem;
+             border-radius:.3rem; }
+  .del-btn:hover { color:var(--accent-ink); background:var(--panel-2); }
   .card { background:var(--panel); border:1px solid var(--line);
           border-radius:.75rem; padding:.95rem 1rem; display:flex;
           flex-direction:column; gap:.55rem; }
@@ -313,20 +322,24 @@
   .ses-head { display:flex; align-items:baseline; gap:.55rem; flex-wrap:wrap;
               padding:.6rem .85rem; border-bottom:1px solid var(--line);
               background:var(--panel-2); }
-  .ses-head code { background:none; padding:0; color:var(--muted);
-                   font-size:.78rem; }
+  .ses-head time { font-size:.78rem; color:var(--fg); font-weight:600; }
   .ses-meta { font-size:.78rem; color:var(--dim); }
   .ses-meta b { color:var(--accent-ink); font-weight:600; }
   .ses-meta b.bad { color:var(--warn); }
-  .ses-head time { margin-left:auto; font-size:.72rem; color:var(--dim); }
+  /* The session id is provenance, not the headline - kept small and pushed to
+     the far side rather than leading, the way an order number sits on a
+     receipt: present for anyone who wants to correlate it, not the first
+     thing a reader has to parse. */
+  .ses-id { margin-left:auto; background:none; padding:0; color:var(--dim);
+            font-size:.7rem; opacity:.8; }
   /* Numbered so the order reads as a sequence - which tool the agent reached
      for first is the part an aggregate table cannot show. */
   .steps { margin:0; padding:.5rem .85rem .7rem 2.1rem; }
   .steps li { font-size:.82rem; color:var(--muted); margin-bottom:.3rem; }
   .steps li::marker { color:var(--dim); font-size:.72rem; }
-  .steps li.w code { color:var(--accent-ink); font-weight:700; }
-  .steps li.bad code { color:var(--warn); }
-  .steps code { background:none; padding:0; color:var(--fg); font-size:.82rem; }
+  .steps li.w .step-label { color:var(--accent-ink); font-weight:700; }
+  .steps li.bad .step-label { color:var(--warn); }
+  .steps .step-label { color:var(--fg); font-size:.82rem; }
   .steps .ms { color:var(--dim); font-variant-numeric:tabular-nums;
                margin-left:.4rem; font-size:.75rem; }
   .steps .sm { display:block; color:var(--dim); font-size:.75rem; }
@@ -732,10 +745,11 @@
   <section id="activity">
     <h2><span class="num">06</span>What the assistant has done</h2>
     <p class="sub">
-      This page only reads. Everything below was created by the assistant when
-      someone asked it to — track a driver, log a prediction before a race, save
-      a note about what happened. Ask it in chat, then reload this page to see
-      the result appear.
+      Everything below was created by the assistant when someone asked it to
+      in chat — track a driver, log a prediction before a race, save a note
+      about what happened. Ask it in chat, then reload this page to see the
+      result appear. Removing something is the one thing this page does
+      directly, with the button beside each row.
     </p>
 
     <div class="cards">
@@ -745,7 +759,15 @@
         {% if activity.watchlist %}
           <div class="scroll"><table><tbody>
           {% for w in activity.watchlist %}
-            <tr><td>{{ w.entity_ref }}<div style="color:var(--dim);font-size:.8rem">{{ w.entity_type }}{% if w.note %} · {{ w.note }}{% endif %}</div></td></tr>
+            <tr>
+              <td>{{ w.entity_ref }}<div style="color:var(--dim);font-size:.8rem">{{ w.entity_type }}{% if w.note %} · {{ w.note }}{% endif %}</div></td>
+              <td class="del-cell">
+                <form method="POST" action="{{ url_for('delete_watchlist_item', item_id=w.id) }}"
+                      onsubmit="return confirm('Remove {{ w.entity_ref|e }} from the watchlist?')">
+                  <button type="submit" class="del-btn" title="Remove" aria-label="Remove {{ w.entity_ref }}">&times;</button>
+                </form>
+              </td>
+            </tr>
           {% endfor %}
           </tbody></table></div>
         {% else %}<div class="empty">Nothing tracked yet.</div>{% endif %}
@@ -757,10 +779,18 @@
         {% if activity.predictions %}
           <div class="scroll"><table><tbody>
           {% for p in activity.predictions %}
-            <tr><td>{{ p.prediction }}
-              <div style="color:var(--dim);font-size:.8rem">
-                {{ p.season }} {{ p.race_name or "R" ~ p.round }} · {{ p.confidence }}
-              </div></td></tr>
+            <tr>
+              <td>{{ p.prediction }}
+                <div style="color:var(--dim);font-size:.8rem">
+                  {{ p.season }} {{ p.race_name or "R" ~ p.round }} · {{ p.confidence }}
+                </div></td>
+              <td class="del-cell">
+                <form method="POST" action="{{ url_for('delete_prediction_item', item_id=p.id) }}"
+                      onsubmit="return confirm('Delete this prediction?')">
+                  <button type="submit" class="del-btn" title="Delete" aria-label="Delete prediction">&times;</button>
+                </form>
+              </td>
+            </tr>
           {% endfor %}
           </tbody></table></div>
         {% else %}<div class="empty">No predictions logged yet.</div>{% endif %}
@@ -772,8 +802,16 @@
         {% if activity.notes %}
           <div class="scroll"><table><tbody>
           {% for n in activity.notes %}
-            <tr><td>{{ n.note }}
-              <div style="color:var(--dim);font-size:.8rem">{{ n.season }} {{ n.race_name or "R" ~ n.round }}</div></td></tr>
+            <tr>
+              <td>{{ n.note }}
+                <div style="color:var(--dim);font-size:.8rem">{{ n.season }} {{ n.race_name or "R" ~ n.round }}</div></td>
+              <td class="del-cell">
+                <form method="POST" action="{{ url_for('delete_note_item', item_id=n.id) }}"
+                      onsubmit="return confirm('Delete this note?')">
+                  <button type="submit" class="del-btn" title="Delete" aria-label="Delete note">&times;</button>
+                </form>
+              </td>
+            </tr>
           {% endfor %}
           </tbody></table></div>
         {% else %}<div class="empty">No notes saved yet.</div>{% endif %}
@@ -803,17 +841,17 @@
       {% set top = analytics.tools[0].call_count %}
       <div class="panel scroll" style="margin-top:1rem">
         <table>
-          <thead><tr><th>Tool</th><th class="num">Calls</th><th class="num">Writes</th>
-            <th class="num">Errors</th><th class="num">Avg ms</th>
-            <th style="width:28%">Share</th></tr></thead>
+          <thead><tr><th>What it did</th><th class="num">Calls</th><th class="num">Writes</th>
+            <th class="num">Errors</th><th class="num">Avg time</th>
+            <th style="width:24%">Share</th></tr></thead>
           <tbody>
           {% for t in analytics.tools %}
             <tr>
-              <td><code>{{ t.tool_name }}</code></td>
+              <td title="{{ t.tool_name }}">{{ t.label }}</td>
               <td class="num">{{ t.call_count }}</td>
               <td class="num">{% if t.write_count %}<b style="color:var(--accent-ink)">{{ t.write_count }}</b>{% else %}—{% endif %}</td>
               <td class="num">{{ t.error_count or "—" }}</td>
-              <td class="num">{{ t.avg_duration_ms or "—" }}</td>
+              <td class="num">{% if not t.avg_duration_ms %}—{% elif t.avg_duration_ms >= 1000 %}{{ (t.avg_duration_ms / 1000)|round(1) }}s{% else %}{{ t.avg_duration_ms }} ms{% endif %}</td>
               <td><div class="bar"><i style="width:{{ (t.call_count / top * 100)|round(1) }}%"></i></div></td>
             </tr>
           {% endfor %}
@@ -828,28 +866,29 @@
 
     {% if sessions %}
       <p class="sub" style="margin-top:1.6rem">
-        The same feed at the grain it is legible at: the last
-        {{ sessions|length }} conversations, each showing the calls it made in
-        order, what each returned, and how long it took.
+        The same record, one conversation at a time: the last
+        {{ sessions|length }} conversations, each showing what was checked or
+        changed, in order, and whether it worked.
       </p>
       <div class="sessions">
         {% for s in sessions %}
           <div class="ses">
             <div class="ses-head">
-              <code>{{ s.session_id[:8] }}</code>
+              <time>{{ s.last_at.strftime("%d %b, %H:%M") }}</time>
               <span class="ses-meta">
                 {{ s.calls }} call{{ "" if s.calls == 1 else "s" }} ·
-                {{ s.total_ms }} ms
-                {%- if s.writes %} · <b>{{ s.writes }} write</b>{% endif %}
-                {%- if s.errors %} · <b class="bad">{{ s.errors }} error</b>{% endif %}
+                {% if s.total_ms >= 1000 %}{{ (s.total_ms / 1000)|round(1) }}s{% else %}{{ s.total_ms }} ms{% endif %}
+                {%- if s.writes %} · <b>{{ s.writes }} write{{ "" if s.writes == 1 else "s" }}</b>{% endif %}
+                {%- if s.errors %} · <b class="bad">{{ s.errors }} error{{ "" if s.errors == 1 else "s" }}</b>{% endif %}
               </span>
-              <time>{{ s.last_at.strftime("%d %b %H:%M") }}</time>
+              <code class="ses-id" title="session id">{{ s.session_id[:8] }}</code>
             </div>
             <ol class="steps">
               {% for st in s.steps %}
-                <li class="{{ 'w' if st.is_write else '' }}{{ ' bad' if st.outcome != 'ok' else '' }}">
-                  <code>{{ st.tool_name }}</code>
-                  <span class="ms">{{ st.duration_ms }} ms</span>
+                <li class="{{ 'w' if st.is_write else '' }}{{ ' bad' if st.outcome != 'ok' else '' }}"
+                    title="{{ st.tool_name }}">
+                  <span class="step-label">{{ st.label }}</span>
+                  <span class="ms">{% if st.duration_ms and st.duration_ms >= 1000 %}{{ (st.duration_ms / 1000)|round(1) }}s{% else %}{{ st.duration_ms }} ms{% endif %}</span>
                   {% if st.summary %}<span class="sm">{{ st.summary }}</span>{% endif %}
                   {% if st.outcome != 'ok' %}<span class="sm">{{ st.outcome }}</span>{% endif %}
                 </li>
@@ -869,7 +908,7 @@
       The governed medallion pipeline's own AI/BI dashboard — six decision
       pages over the same Gold marts this copilot reads, built and refreshed
       independently of anything on this page.
-      <a href="{{ dashboard_url }}" target="_blank" rel="noopener">Open in a new tab ↗</a>
+      <a href="{{ url_for('dashboard_page') }}" target="_blank" rel="noopener">Open full view ↗</a>
     </p>
     <div class="panel" style="padding:0; overflow:hidden">
       <iframe
@@ -881,7 +920,8 @@
     </div>
     <p class="sub" style="margin-top:.5rem; font-size:.8rem">
       If the panel above stays blank, your workspace doesn't allow dashboards
-      to be framed inside another page — the link is the reliable path either way.
+      to be framed inside another page — the full-view link opens on this
+      app's own domain either way.
     </p>
   </section>
   {% endif %}

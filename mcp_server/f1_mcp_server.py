@@ -7,9 +7,9 @@ Exposes F1 tools over MCP so a Databricks agent can call them:
   - get_driver_season               - add_to_watchlist
   - compare_constructors            - log_prediction
   - get_championship_standings      - save_race_note
-  - get_constructor_standings
-  - get_race_weather
-  - find_wet_races
+  - get_constructor_standings       - remove_from_watchlist
+  - get_race_weather                - delete_prediction
+  - find_wet_races                  - delete_note
   - search_race_reports
   - get_race_strategy · find_strategy_races
   - get_race_pace
@@ -462,6 +462,63 @@ def save_race_note(season: int, race: str, note: str) -> dict:
         return _error(exc, f"save_race_note({season}, {race!r})")
 
 
+@mcp.tool
+def remove_from_watchlist(item_id: int) -> dict:
+    """
+    Remove an entry from the watchlist by id. WRITES to the database.
+
+    Args:
+        item_id: The watchlist row's id, as returned by add_to_watchlist or
+            get_watchlist.
+
+    Returns:
+        A dict with written=true and the row that was removed. Errors if no
+        watchlist entry with that id exists for this user.
+    """
+    try:
+        return f1_broker.remove_from_watchlist(item_id)
+    except Exception as exc:
+        return _error(exc, f"remove_from_watchlist({item_id})")
+
+
+@mcp.tool
+def delete_prediction(item_id: int) -> dict:
+    """
+    Delete a logged prediction by id. WRITES to the database.
+
+    Args:
+        item_id: The prediction row's id, as returned by log_prediction or
+            get_predictions.
+
+    Returns:
+        A dict with written=true and the row that was deleted. Errors if no
+        prediction with that id exists for this user.
+    """
+    try:
+        return f1_broker.delete_prediction(item_id)
+    except Exception as exc:
+        return _error(exc, f"delete_prediction({item_id})")
+
+
+@mcp.tool
+def delete_note(item_id: int) -> dict:
+    """
+    Delete a saved race note by id. WRITES to the database.
+
+    Args:
+        item_id: The note row's id, as returned by save_race_note or
+            get_race_notes.
+
+    Returns:
+        A dict with written=true and the row that was deleted. Errors if no
+        note with that id exists for this user.
+    """
+    try:
+        return f1_broker.delete_note(item_id)
+    except Exception as exc:
+        return _error(exc, f"delete_note({item_id})")
+
+
 # --------------------------------------------------------------------------
 # Human-facing routes
 #
@@ -480,7 +537,8 @@ async def health(_request: Request) -> JSONResponse:
 @mcp.custom_route("/", methods=["GET"])
 async def landing(request: Request) -> HTMLResponse:
     tools = await mcp.list_tools()
-    writes = {"add_to_watchlist", "log_prediction", "save_race_note"}
+    writes = {"add_to_watchlist", "log_prediction", "save_race_note",
+              "remove_from_watchlist", "delete_prediction", "delete_note"}
     rows = "".join(
         f"<tr><td><code>{html.escape(t.name)}</code></td>"
         f"<td>{'<b>write</b>' if t.name in writes else 'read'}</td>"

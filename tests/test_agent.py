@@ -38,7 +38,7 @@ class TestToolWiring:
     def test_write_tools_are_declared(self):
         import agent
         assert agent.WRITE_TOOLS <= set(agent.DISPATCH)
-        assert len(agent.WRITE_TOOLS) == 3
+        assert len(agent.WRITE_TOOLS) == 6
 
     def test_mcp_server_exposes_the_same_tools(self):
         import asyncio
@@ -72,6 +72,39 @@ class TestWritesPersist:
         assert written["row"]["race_name"]  # resolution reported back
 
         assert any(n["note"] == ref for n in broker.get_notes(2024)["notes"])
+
+
+class TestDeletesPersist:
+    """The delete tools are the UI's one direct write (see app.py) as well as
+    agent tools, so the same round-trip risk applies in reverse: a DELETE that
+    reports success but never commits would leave the row readable, and a
+    caller that trusts the return value would tell a user something is gone
+    when it is not."""
+
+    def test_watchlist_removal_survives_the_connection(self, broker, marker):
+        ref = marker("test")
+        broker.add_watchlist("constructor", ref)
+        item_id = next(i["id"] for i in broker.get_watchlist()["items"]
+                       if i["entity_ref"] == ref)
+
+        removed = broker.remove_from_watchlist(item_id)
+        assert removed["written"] is True
+
+        assert not any(i["entity_ref"] == ref for i in broker.get_watchlist()["items"])
+
+    def test_note_deletion_survives_the_connection(self, broker, marker):
+        ref = marker("note")
+        written = broker.save_note(2024, "Sao Paulo", ref)
+        item_id = written["row"]["id"]
+
+        deleted = broker.delete_note(item_id)
+        assert deleted["written"] is True
+
+        assert not any(n["note"] == ref for n in broker.get_notes(2024)["notes"])
+
+    def test_deleting_an_unowned_or_missing_id_raises(self, broker):
+        with pytest.raises(ValueError):
+            broker.delete_note(2**31 - 1)
 
     def test_prediction_requires_valid_confidence(self, broker):
         with pytest.raises(ValueError):

@@ -1,10 +1,15 @@
 """
 Queries backing the frontend.
 
-Read-only. Every write in this project goes through the agent's MCP tools -
-that is the point of the write tools, and a UI that also wrote directly would
-make it impossible to demonstrate that the agent, specifically, took an action.
-The watchlist, predictions and notes shown here were all written by the agent.
+Mostly read-only. Everything the assistant can create (watchlist entries,
+predictions, notes) is still created only through chat, going through the
+agent's MCP tools - that's what makes it demonstrable that the agent,
+specifically, took the action. Removing one of those rows is the one direct
+write the UI makes on its own (see app.py's /api/*/delete routes): deletion is
+a deterministic "remove row N" operation with no upside to routing through an
+LLM, and it calls the exact same f1_broker functions the matching agent tools
+(remove_from_watchlist, delete_prediction, delete_note) call - one
+implementation, reachable from chat or from a button.
 
 Like the MCP server, everything here reads Lakebase and nothing reads Delta, so
 rendering a page costs no Databricks compute.
@@ -15,6 +20,37 @@ import logging
 from f1lake import embedder, schema
 
 logger = logging.getLogger("ui-data")
+
+# Tool names as they appear in agent_tool_calls are the Python identifiers
+# f1_broker/f1_mcp_server use - accurate, but written for someone reading the
+# code, not for someone deciding whether to trust the assistant. This is the
+# same information in the words a reader would use to describe what happened.
+TOOL_LABELS = {
+    "get_driver_season": "Looked up a driver's season",
+    "compare_constructors": "Compared two constructors",
+    "get_championship_standings": "Checked the drivers' standings",
+    "get_constructor_standings": "Checked the constructors' standings",
+    "get_race_weather": "Checked measured race-day weather",
+    "find_wet_races": "Found races with heavy rainfall",
+    "search_race_reports": "Searched race reports",
+    "get_race_strategy": "Checked pit-stop strategy",
+    "find_strategy_races": "Found races with varied strategy",
+    "get_race_pace": "Checked race pace",
+    "get_season_schedule": "Checked the season schedule",
+    "get_watchlist": "Checked the watchlist",
+    "get_predictions": "Checked logged predictions",
+    "get_race_notes": "Checked saved notes",
+    "add_to_watchlist": "Added to the watchlist",
+    "log_prediction": "Logged a prediction",
+    "save_race_note": "Saved a note",
+    "remove_from_watchlist": "Removed from the watchlist",
+    "delete_prediction": "Deleted a prediction",
+    "delete_note": "Deleted a note",
+}
+
+
+def _label(tool_name: str) -> str:
+    return TOOL_LABELS.get(tool_name, tool_name)
 
 # The four races that make the project's central point: near-identical daily
 # rainfall, opposite race outcomes. Pinned rather than computed so the panel
@@ -182,6 +218,8 @@ def agent_analytics() -> dict:
         FROM {schema.TOOL_CALLS}
         WHERE tool_name NOT LIKE 'test\\_%%' ESCAPE '\\'
         GROUP BY tool_name ORDER BY call_count DESC""")
+    for t in tools:
+        t["label"] = _label(t["tool_name"])
     totals = schema.query(f"""
         SELECT count(*) AS calls,
                count(*) FILTER (WHERE is_write)        AS writes,
@@ -238,7 +276,8 @@ def recent_sessions(limit: int = 6) -> list[dict]:
                 "errors": row["errors"], "steps": [],
             })
         sessions[-1]["steps"].append({
-            "tool_name": row["tool_name"], "is_write": row["is_write"],
+            "tool_name": row["tool_name"], "label": _label(row["tool_name"]),
+            "is_write": row["is_write"],
             "outcome": row["outcome"], "summary": row["summary"],
             "duration_ms": row["duration_ms"],
         })
@@ -278,19 +317,24 @@ def strategy_races(season: int, limit: int = 12) -> list[dict]:
 
 
 def agent_activity() -> dict:
-    """Everything the agent has written. Proof that the write tools work."""
+    """Everything the agent has written. Proof that the write tools work.
+
+    `id` is selected on every row so the UI's delete buttons can target one
+    row - DELETE ... WHERE id = %s AND user_id = %s in f1_broker, the same
+    write path chat-driven removal uses (see app.py's /api/*/delete routes).
+    """
     return {
         "watchlist": schema.query("""
-            SELECT entity_type, entity_ref, note, added_at
+            SELECT id, entity_type, entity_ref, note, added_at
             FROM f1_watchlist ORDER BY added_at DESC LIMIT 20"""),
         "predictions": schema.query("""
-            SELECT p.season, p.round, r.race_name, p.prediction, p.confidence,
+            SELECT p.id, p.season, p.round, r.race_name, p.prediction, p.confidence,
                    p.rationale, p.created_at
             FROM f1_predictions p
             LEFT JOIN f1_races r ON r.season = p.season AND r.round = p.round
             ORDER BY p.created_at DESC LIMIT 20"""),
         "notes": schema.query("""
-            SELECT n.season, n.round, r.race_name, n.note, n.created_at
+            SELECT n.id, n.season, n.round, r.race_name, n.note, n.created_at
             FROM f1_race_notes n
             LEFT JOIN f1_races r ON r.season = n.season AND r.round = n.round
             ORDER BY n.created_at DESC LIMIT 20"""),

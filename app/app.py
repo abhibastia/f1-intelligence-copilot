@@ -5,12 +5,16 @@ A Databricks App that presents the project's central finding and lets a user
 explore the corpus the agent reasons over: race results from the Spark pipeline,
 measured race-day weather, and the narrative of race reports.
 
-READ-ONLY BY DESIGN
--------------------
-Nothing here writes. Every write in this project goes through the agent's MCP
-tools, which is what makes the "agent takes real actions" requirement
-demonstrable: the watchlist, predictions and notes on this page were all created
-by the agent, not by a form on this page.
+MOSTLY READ-ONLY, DELIBERATELY
+-------------------------------
+Everything the assistant can *create* here - watchlist entries, predictions,
+notes - goes through the agent's MCP tools, never a form on this page: that's
+what makes it demonstrable that the agent, specifically, took the action.
+Deleting one of those rows is the one direct write this page makes on its own
+(/api/*/delete below) - a deterministic "remove row N" with no upside to
+routing through an LLM, calling the exact same f1_broker functions the
+matching agent tools call. One implementation, reachable from chat or from a
+button in section 06.
 
 Serves entirely from Lakebase, so rendering a page costs no Databricks compute.
 
@@ -21,9 +25,10 @@ Run locally:
 import logging
 import os
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 
 import agent
+import f1_broker
 import ui_data
 from f1lake import schema
 
@@ -86,6 +91,53 @@ def index():
             mcp_url=MCP_URL, dashboard_url=DASHBOARD_URL,
             error=schema.safe_message(exc),
         )
+
+
+@app.route("/dashboard")
+def dashboard_page():
+    """A same-origin page wrapping the AI/BI dashboard in an iframe.
+
+    Linking straight to the dashboard's own dbc-...cloud.databricks.com URL
+    dropped a visitor into the full Databricks workspace chrome - correct for
+    a workspace user, jarring for someone who was just looking at this app.
+    This route keeps them on f1-intelligence-ui's own domain; the dashboard's
+    own content inside the iframe is still rendered by Databricks (that part
+    can't be reskinned from here), but the page around it is this app's.
+    """
+    if not DASHBOARD_URL:
+        abort(404)
+    return render_template("dashboard.html", dashboard_url=DASHBOARD_URL)
+
+
+# --------------------------------------------------------------------------
+# Deletes — the one direct write this page makes; see the module docstring.
+# --------------------------------------------------------------------------
+
+@app.route("/api/watchlist/<int:item_id>/delete", methods=["POST"])
+def delete_watchlist_item(item_id):
+    try:
+        f1_broker.remove_from_watchlist(item_id)
+    except Exception:
+        logger.exception("Could not remove watchlist item %s", item_id)
+    return redirect(url_for("index", _anchor="activity"))
+
+
+@app.route("/api/predictions/<int:item_id>/delete", methods=["POST"])
+def delete_prediction_item(item_id):
+    try:
+        f1_broker.delete_prediction(item_id)
+    except Exception:
+        logger.exception("Could not delete prediction %s", item_id)
+    return redirect(url_for("index", _anchor="activity"))
+
+
+@app.route("/api/notes/<int:item_id>/delete", methods=["POST"])
+def delete_note_item(item_id):
+    try:
+        f1_broker.delete_note(item_id)
+    except Exception:
+        logger.exception("Could not delete note %s", item_id)
+    return redirect(url_for("index", _anchor="activity"))
 
 
 @app.route("/api/chat", methods=["POST"])

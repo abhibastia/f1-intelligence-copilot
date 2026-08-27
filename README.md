@@ -1,5 +1,7 @@
 # F1 Intelligence Copilot
 
+[![tests](https://github.com/abhibastia/f1-intelligence-copilot/actions/workflows/tests.yml/badge.svg)](https://github.com/abhibastia/f1-intelligence-copilot/actions/workflows/tests.yml)
+
 A governed Formula 1 data platform and an agentic strategy copilot, merged into
 one system. Three public APIs → Unity Catalog Volume → a Lakeflow Declarative
 Pipeline (Bronze → Silver → Gold) → **three ways to ask it questions**: an

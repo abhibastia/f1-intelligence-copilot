@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements-dev.txt
+
+      # No Databricks credentials exist here, by design - this is a public
+      # runner. Nothing special needs to happen for that: every test that
+      # needs Lakebase is `integration`-marked and skips cleanly through the
+      # `lakebase` fixture in tests/conftest.py the same way it does on a
+      # laptop with no .databrickscfg, so a plain `pytest` run is exactly
+      # what a contributor already runs before pushing (see CLAUDE.md's
+      # Verification bar) - this just makes sure nobody forgets to.
+      - run: pytest

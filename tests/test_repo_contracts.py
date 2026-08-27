@@ -260,6 +260,46 @@ def test_dataset_queries_use_bare_table_names(path):
         )
 
 
+# ──────────────────────────── generated app payload ──────────────────────
+
+# The exact copy list scripts/build_app.sh performs, mirrored here so a drift
+# check does not depend on shelling out to bash. f1lake/{schema,embedder,
+# __init__}.py go into both app/ and mcp_server/; f1_broker.py's canonical
+# home is mcp_server/, copied into app/ only.
+GENERATED_COPIES = [
+    pytest.param(ROOT / "f1lake" / "__init__.py", ROOT / "app" / "f1lake" / "__init__.py",
+                 id="app/f1lake/__init__.py"),
+    pytest.param(ROOT / "f1lake" / "schema.py", ROOT / "app" / "f1lake" / "schema.py",
+                 id="app/f1lake/schema.py"),
+    pytest.param(ROOT / "f1lake" / "embedder.py", ROOT / "app" / "f1lake" / "embedder.py",
+                 id="app/f1lake/embedder.py"),
+    pytest.param(ROOT / "f1lake" / "__init__.py", ROOT / "mcp_server" / "f1lake" / "__init__.py",
+                 id="mcp_server/f1lake/__init__.py"),
+    pytest.param(ROOT / "f1lake" / "schema.py", ROOT / "mcp_server" / "f1lake" / "schema.py",
+                 id="mcp_server/f1lake/schema.py"),
+    pytest.param(ROOT / "f1lake" / "embedder.py", ROOT / "mcp_server" / "f1lake" / "embedder.py",
+                 id="mcp_server/f1lake/embedder.py"),
+    pytest.param(ROOT / "mcp_server" / "f1_broker.py", ROOT / "app" / "f1_broker.py",
+                 id="app/f1_broker.py"),
+]
+
+
+@pytest.mark.parametrize("canonical,generated", GENERATED_COPIES)
+def test_generated_app_payload_matches_its_source(canonical, generated):
+    """A Databricks App deploys from a single source path, so f1lake/ and
+    f1_broker.py are committed copies rather than a shared sibling import (see
+    the .gitignore comment on why they're tracked instead of ignored). That
+    means they can silently drift from their source whenever someone edits
+    f1lake/ or mcp_server/f1_broker.py and forgets to re-run
+    scripts/build_app.sh - `git diff` shows it, but only to someone who
+    remembers to look. This is that check, automatic instead of remembered.
+    """
+    assert generated.read_bytes() == canonical.read_bytes(), (
+        f"{generated.relative_to(ROOT)} has drifted from "
+        f"{canonical.relative_to(ROOT)} — run scripts/build_app.sh before committing"
+    )
+
+
 # ──────────────────────────────── bundle ─────────────────────────────────
 
 def test_bundle_pins_no_workspace_or_profile():

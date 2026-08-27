@@ -21,6 +21,12 @@ sentence-transformers>=3.0.0
 # even for the tests that never touch Lakebase.
 flask>=3.0.0
 
+# tests/test_agent.py::test_mcp_server_exposes_the_same_tools imports
+# mcp_server/f1_mcp_server.py to cross-check its tool list against the
+# in-app agent's - a pure-logic check, but it still needs fastmcp installed
+# to import the module at all.
+fastmcp>=3.2.0
+
 # Pure-Python Postgres driver, not psycopg2-binary: the latter bundles a
 # compiled OpenSSL/libpq that SIGABRTs on Databricks serverless job compute
 # when other native extensions (pandas, pyarrow, grpc) are already loaded in

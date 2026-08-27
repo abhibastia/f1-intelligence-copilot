@@ -23,7 +23,5 @@ env:
   - name: SENTENCE_TRANSFORMERS_HOME
     value: "/tmp/.cache/huggingface"
 
-  # Replace with your own MCP app's URL after deploying it (see README §5,
-  # Step 4) and redeploy — this default is only a placeholder.
   - name: MCP_SERVER_URL
-    value: "https://f1-intelligence-mcp-<workspace-id>.aws.databricksapps.com"
+    value: "https://f1-intelligence-mcp-7474646797973312.aws.databricksapps.com"

@@ -58,10 +58,10 @@ def healthz():
 @app.route("/")
 def index():
     season = request.args.get("season", type=int)
-    available = ui_data.seasons()
-    if season not in available:
-        season = available[0] if available else None
     try:
+        available = ui_data.seasons()
+        if season not in available:
+            season = available[0] if available else None
         return render_template(
             "index.html",
             stats=ui_data.corpus_stats(),

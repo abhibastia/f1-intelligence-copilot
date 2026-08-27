@@ -17,6 +17,10 @@ pyyaml>=6.0
 requests>=2.31.0
 sentence-transformers>=3.0.0
 
+# tests/test_app.py imports app/app.py, which needs Flask itself to import,
+# even for the tests that never touch Lakebase.
+flask>=3.0.0
+
 # Pure-Python Postgres driver, not psycopg2-binary: the latter bundles a
 # compiled OpenSSL/libpq that SIGABRTs on Databricks serverless job compute
 # when other native extensions (pandas, pyarrow, grpc) are already loaded in

@@ -1,0 +1,68 @@
+<div class="scrim" onclick="toggleRail()" aria-hidden="true"></div>
+
+<!-- ===================== THE COPILOT RAIL =====================
+     Docked rather than placed in the page flow. See the .rail comment in the
+     stylesheet for why. -->
+<aside class="rail" id="rail" aria-label="Copilot">
+  <div class="rail-head">
+    <!-- viewBox trimmed to the bars themselves. Reusing the header's 120x48 box
+         for a mark that only occupies the top-left of it renders a sliver. -->
+    <svg class="mark" viewBox="0 4 62 29" aria-hidden="true">
+      <rect x="0"  y="6"  width="46" height="5" rx="2.5" fill="var(--accent)" opacity=".45"/>
+      <rect x="8"  y="16" width="54" height="5" rx="2.5" fill="var(--accent)" opacity=".7"/>
+      <rect x="2"  y="26" width="38" height="5" rx="2.5" fill="var(--accent)"/>
+    </svg>
+    <b>Copilot<span class="tagline">Reads the data, cites every call</span></b>
+    <button class="icon-btn" onclick="clearChat()" title="Start a new conversation"
+            aria-label="Start a new conversation" style="margin-left:auto">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+    </button>
+    <button class="icon-btn" onclick="toggleRail()" title="Hide the copilot"
+            aria-label="Hide the copilot" style="margin-left:0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+
+  <div class="chat-log" id="log">
+    <div class="msg bot">
+      <div class="who">Copilot</div>
+      <div class="bubble">
+        Ask me why a race turned out the way it did — or tell me to track a
+        driver, save a note, or log a prediction.
+      </div>
+    </div>
+  </div>
+
+  <div class="starters-label" id="starters-label">Try asking</div>
+  <div class="starters" id="starters">
+    {# Starters are questions with good answers in this data. An earlier set
+       included "Why did Ferrari lose the 2024 Italian Grand Prix?" as a
+       demonstration that the agent refuses a false premise - Leclerc won that
+       race. It does refuse it, but a suggested question is read as a statement
+       the page endorses, so it looked like the app believed Ferrari lost. Keep
+       the guardrail; do not advertise it as fact.
+       After the first answer these are replaced by follow-ups derived from the
+       tool calls that answer actually made. #}
+    {% for s in starters %}
+      <span class="chip" onclick="askThis(this.textContent.trim())">{{ s }}</span>
+    {% endfor %}
+  </div>
+
+  <form class="chat-form" onsubmit="sendChat(event)">
+    <input id="q-chat" type="search" autocomplete="off"
+           placeholder="Ask about a race or a driver…"
+           aria-label="Ask the copilot">
+    <button type="submit" id="send">Ask</button>
+  </form>
+</aside>
+
+<button class="fab" onclick="toggleRail()" aria-label="Open the copilot">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/>
+  </svg>
+  Ask the copilot
+</button>

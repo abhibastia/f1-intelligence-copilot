@@ -1,0 +1,33 @@
+<!-- ===================== STRATEGY ===================== -->
+<section id="strategy">
+  <h2><span class="num">05</span>Where strategy actually diverged</h2>
+  <p class="sub">
+    Races ranked by how much teams disagreed. When one driver runs a single
+    stint and another runs five, the result was decided in the pit lane rather
+    than on track — those are the races worth reading about.
+  </p>
+  <div class="panel scroll">
+    <table>
+      <thead><tr>
+        <th class="num">R</th><th>Grand Prix</th><th class="num">Stint spread</th>
+        <th class="num">Avg stints</th><th class="num">Avg stop</th>
+        <th>Conditions</th>
+      </tr></thead>
+      <tbody>
+      {% for r in strategy %}
+        <tr>
+          <td class="num">{{ r.round }}</td>
+          <td>{{ r.race_name }}</td>
+          <td class="num">{{ r.min_stints }}–{{ r.max_stints }}</td>
+          <td class="num">{{ r.avg_stints }}</td>
+          <td class="num">{{ (r.avg_stop_s ~ " s") if r.avg_stop_s else "—" }}</td>
+          <td>{% if r.precipitation_mm is not none %}
+                <span class="pill {{ 'wet' if r.was_wet else 'dry' }}">
+                  {{ r.precipitation_mm }} mm</span>
+              {% else %}<span style="color:var(--dim)">no data</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>

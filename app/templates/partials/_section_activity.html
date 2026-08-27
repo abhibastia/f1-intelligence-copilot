@@ -1,0 +1,77 @@
+<!-- ===================== AGENT ===================== -->
+<section id="activity">
+  <h2><span class="num">06</span>What the assistant has done</h2>
+  <p class="sub">
+    Everything below was created by the assistant when someone asked it to
+    in chat — track a driver, log a prediction before a race, save a note
+    about what happened. Ask it in chat, then reload this page to see the
+    result appear. Removing something is the one thing this page does
+    directly, with the button beside each row.
+  </p>
+
+  <div class="cards">
+    <div class="panel">
+      <div class="panel-pad"><b>Watchlist</b>
+        <span style="color:var(--dim)"> · {{ activity.watchlist|length }}</span></div>
+      {% if activity.watchlist %}
+        <div class="scroll"><table><tbody>
+        {% for w in activity.watchlist %}
+          <tr>
+            <td>{{ w.entity_ref }}<div style="color:var(--dim);font-size:.8rem">{{ w.entity_type }}{% if w.note %} · {{ w.note }}{% endif %}</div></td>
+            <td class="del-cell">
+              <form method="POST" action="{{ url_for('delete_watchlist_item', item_id=w.id) }}"
+                    onsubmit="return confirm('Remove {{ w.entity_ref|e }} from the watchlist?')">
+                <button type="submit" class="del-btn" title="Remove" aria-label="Remove {{ w.entity_ref }}">&times;</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody></table></div>
+      {% else %}<div class="empty">Nothing tracked yet.</div>{% endif %}
+    </div>
+
+    <div class="panel">
+      <div class="panel-pad"><b>Predictions</b>
+        <span style="color:var(--dim)"> · {{ activity.predictions|length }}</span></div>
+      {% if activity.predictions %}
+        <div class="scroll"><table><tbody>
+        {% for p in activity.predictions %}
+          <tr>
+            <td>{{ p.prediction }}
+              <div style="color:var(--dim);font-size:.8rem">
+                {{ p.season }} {{ p.race_name or "R" ~ p.round }} · {{ p.confidence }}
+              </div></td>
+            <td class="del-cell">
+              <form method="POST" action="{{ url_for('delete_prediction_item', item_id=p.id) }}"
+                    onsubmit="return confirm('Delete this prediction?')">
+                <button type="submit" class="del-btn" title="Delete" aria-label="Delete prediction">&times;</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody></table></div>
+      {% else %}<div class="empty">No predictions logged yet.</div>{% endif %}
+    </div>
+
+    <div class="panel">
+      <div class="panel-pad"><b>Race notes</b>
+        <span style="color:var(--dim)"> · {{ activity.notes|length }}</span></div>
+      {% if activity.notes %}
+        <div class="scroll"><table><tbody>
+        {% for n in activity.notes %}
+          <tr>
+            <td>{{ n.note }}
+              <div style="color:var(--dim);font-size:.8rem">{{ n.season }} {{ n.race_name or "R" ~ n.round }}</div></td>
+            <td class="del-cell">
+              <form method="POST" action="{{ url_for('delete_note_item', item_id=n.id) }}"
+                    onsubmit="return confirm('Delete this note?')">
+                <button type="submit" class="del-btn" title="Delete" aria-label="Delete note">&times;</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody></table></div>
+      {% else %}<div class="empty">No notes saved yet.</div>{% endif %}
+    </div>
+  </div>
+</section>

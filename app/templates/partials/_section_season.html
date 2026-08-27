@@ -1,0 +1,60 @@
+<!-- ===================== SEASON ===================== -->
+<section id="season-sec">
+  <h2><span class="num">03</span>Season explorer</h2>
+  <p class="sub">Every race with its winner and measured conditions.</p>
+
+  <div class="tabs">
+    {% for s in seasons %}
+      <a class="tab" href="?season={{ s }}" aria-selected="{{ 'true' if s == season else 'false' }}">{{ s }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="panel scroll">
+    <table>
+      <thead><tr>
+        <th class="num">R</th><th>Grand Prix</th><th>Circuit</th><th>Date</th>
+        <th>Winner</th><th>Conditions</th><th class="num">Rain</th><th class="num">Report</th>
+      </tr></thead>
+      <tbody>
+      {% for r in races %}
+        <tr>
+          <td class="num">{{ r.round }}</td>
+          <td>{{ r.race_name }}</td>
+          <td>{{ r.circuit_name }}<span style="color:var(--dim)"> · {{ r.circuit_country }}</span></td>
+          <td>{{ r.race_date }}</td>
+          <td>{{ r.winner or "—" }}</td>
+          <td>
+            {% if r.conditions %}
+              <span class="pill {{ 'wet' if r.was_wet else 'dry' }}">{{ r.conditions }}</span>
+            {% else %}<span style="color:var(--dim)">no data</span>{% endif %}
+          </td>
+          <td class="num">{{ (r.precipitation_mm ~ " mm") if r.precipitation_mm is not none else "—" }}</td>
+          <td class="num">{{ r.report_sections or "—" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if standings %}
+  <h2 id="standings" style="margin-top:2rem"><span class="num">04</span>{{ season }} championship</h2>
+  <p class="sub">Standings after the latest round on record.</p>
+  <div class="panel scroll">
+    <table>
+      <thead><tr><th class="num">Pos</th><th>Driver</th><th>Constructor</th>
+        <th class="num">Points</th><th class="num">Wins</th></tr></thead>
+      <tbody>
+      {% for s in standings %}
+        <tr>
+          <td class="num">{{ s.championship_position }}</td>
+          <td>{{ s.driver_name }}</td>
+          <td>{{ s.constructor_name_as_of_race }}</td>
+          <td class="num">{{ s.cumulative_points }}</td>
+          <td class="num">{{ s.cumulative_wins }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>

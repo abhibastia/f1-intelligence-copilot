@@ -1,0 +1,75 @@
+<!-- ===================== THE FINDING ===================== -->
+<section id="finding">
+  <h2><span class="num">01</span>Was it a wet race, or just a wet day?</h2>
+  <p class="sub">
+    The obvious question for this dataset is whether rain makes a race chaotic.
+    Measured rainfall alone says it barely does — and the reason turns out to be
+    the most interesting thing in the project.
+  </p>
+
+  <div class="finding">
+    {# Two highlights, not five. The sentence previously marked "any race",
+       "15 mm or more of rain", both percentages and "weak predictor" - which
+       is most of the sentence, and emphasis on most of a sentence is the same
+       as no emphasis. The two figures carry the argument; the conclusion is
+       the last thing read, so it holds without colour. #}
+    Across 59 races, going from any race to 15 mm or more of rain moves the
+    retirement rate only from <b>{{ thresholds[0].dnf_pct }}%</b> to
+    <b>{{ thresholds[-1].dnf_pct }}%</b>. Daily rainfall is a weak predictor
+    of a chaotic race.
+  </div>
+
+  <div class="panel scroll">
+    <table>
+      <thead><tr>
+        <th>Rainfall threshold</th><th class="num">Races</th>
+        <th class="num">Retirement rate</th><th class="num">Avg position change</th>
+        <th style="width:30%">DNF %</th>
+      </tr></thead>
+      <tbody>
+      {% for t in thresholds %}
+        <tr>
+          <td>{{ "any race" if t.threshold == 0.0 else "≥ %.0f mm"|format(t.threshold) }}</td>
+          <td class="num">{{ t.races }}</td>
+          <td class="num">{{ t.dnf_pct }}%</td>
+          <td class="num">{{ t.pos_change }}</td>
+          <td><div class="bar"><i style="width:{{ (t.dnf_pct|float / 20 * 100)|round(1) }}%"></i></div></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="sub" style="margin-top:1.4rem">
+    Averages hide the real story. Four races with almost identical rainfall
+    produced completely different outcomes — and the race reports say why.
+  </p>
+
+  <div class="cards">
+    {% for r in thesis %}
+      <div class="card {{ 'calm' if r.dnf_pct|float < 12 else 'chaos' }}">
+        <div class="race">
+          {{ r.race_name }} <span class="season">{{ r.season }}</span>
+        </div>
+        <div class="metrics">
+          <div class="metric"><b>{{ r.precipitation_mm }} mm</b><span>Rainfall</span></div>
+          <div class="metric"><b>{{ r.dnf_pct }}%</b><span>Retired</span></div>
+          <div class="metric"><b>{{ r.pos_change }}</b><span>Pos. change</span></div>
+        </div>
+        {% if r.evidence %}
+          <blockquote>“{{ r.evidence }}”</blockquote>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="finding" style="margin-top:1.1rem">
+    <b>Why the split.</b> The weather archive reports a daily total. It cannot
+    distinguish rain that fell overnight from rain that fell during the race.
+    The narrative can — Monza 2024 saw the most rain of any race here and stayed
+    calm because the report notes only “a greater chance of rain than initially
+    forecast”, while São Paulo ran “in rainy conditions on a wet track”.
+    <b>Neither source is trustworthy alone.</b> That is why this project embeds
+    race reports instead of only querying results.
+  </div>
+</section>

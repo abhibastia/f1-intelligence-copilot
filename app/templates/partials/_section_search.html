@@ -1,0 +1,29 @@
+<!-- ===================== SEARCH ===================== -->
+<section id="search">
+  <h2><span class="num">02</span>Search the race reports</h2>
+  <p class="sub">
+    Search 58 race reports by meaning rather than keywords — describe the race you have in mind.
+    Every result shows the weather measured at that circuit that day, so you
+    can see whether the story and the rainfall agree.
+  </p>
+
+  <form class="searchbar" onsubmit="runSearch(event)">
+    <input type="search" id="q" placeholder="e.g. chaotic wet race decided by a safety car"
+           value="chaotic wet race decided by a safety car" aria-label="Search race reports">
+    <select id="season" aria-label="Season filter">
+      <option value="">All seasons</option>
+      {% for s in seasons %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+    </select>
+    <button type="submit">Search</button>
+  </form>
+
+  <div class="chips">
+    {% for c in ["dramatic last lap overtake", "safety car changed the result",
+                 "tyre strategy gamble that paid off", "first win for a driver",
+                 "crash on the opening lap"] %}
+      <span class="chip" onclick="quick(this.textContent.trim())">{{ c }}</span>
+    {% endfor %}
+  </div>
+
+  <div id="results"><p class="empty">Press Search to run the query above.</p></div>
+</section>

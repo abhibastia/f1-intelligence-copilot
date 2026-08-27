@@ -15,9 +15,14 @@ pyyaml>=6.0
 # inherited from f1-strategy-copilot.
 --extra-index-url https://download.pytorch.org/whl/cpu
 requests>=2.31.0
-psycopg2-binary>=2.9.9
 sentence-transformers>=3.0.0
 
-# setup_secrets.py, f1lake.seed_gold's CLI query bridge, and Lakebase secret
-# resolution throughout.
+# Pure-Python Postgres driver, not psycopg2-binary: the latter bundles a
+# compiled OpenSSL/libpq that SIGABRTs on Databricks serverless job compute
+# when other native extensions (pandas, pyarrow, grpc) are already loaded in
+# the same process — see f1lake/schema.py's module docstring.
+pg8000>=1.31
+
+# setup_secrets.py, f1lake.seed_gold's SQL Statement Execution API bridge, and
+# Lakebase secret resolution throughout.
 databricks-sdk>=0.30

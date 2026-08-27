@@ -186,6 +186,44 @@ def fetch_race_report(race, session: requests.Session | None = None) -> dict:
     }
 
 
+def fetch_and_store(races, store, sleep: float = COURTESY_DELAY) -> dict:
+    """Fetch reports for races not yet stored, writing each one immediately.
+
+    `store` is called once per successfully fetched race, with that race's
+    report dict - so a process killed partway through leaves real, queryable
+    progress instead of none. That distinction is the whole reason this exists
+    separately from fetch_many(): fetch_many() collects everything in memory
+    and returns it once at the end, which is fine on a laptop where the
+    process outlives the run, but loses all progress on ephemeral Databricks
+    job compute if the job is killed before that final return - exactly the
+    failure jobs/run_harvest.py used to hit. `store` raising is treated as
+    fatal for that race but not for the run; a Postgres hiccup on one race
+    should not cost the ones already fetched.
+    """
+    session = requests.Session()
+    done = failed = 0
+    for i, race in enumerate(races, 1):
+        try:
+            report = fetch_race_report(race, session=session)
+            store(report)
+            done += 1
+            logger.info(
+                "[%d/%d] %s %s — %d sections, %d chars, stored",
+                i, len(races), race.season, race.race_name,
+                len(report["sections"]), report["total_chars"],
+            )
+        except WikipediaError as exc:
+            failed += 1
+            logger.warning("[%d/%d] %s %s — FAILED: %s",
+                           i, len(races), race.season, race.race_name, exc)
+        except Exception as exc:
+            failed += 1
+            logger.warning("[%d/%d] %s %s — fetched but not stored: %s",
+                           i, len(races), race.season, race.race_name, exc)
+        time.sleep(sleep)
+    return {"fetched": done, "failed": failed}
+
+
 def fetch_many(races, sleep: float = COURTESY_DELAY) -> tuple[list[dict], list[dict]]:
     """Fetch reports for many races. Returns (reports, failures).
 

@@ -1,5 +1,6 @@
 """
-Load pit stops and reconstruct stints. Runs locally, costs no Databricks compute.
+Reconstruct pit-stop stints from seeded pit stops. Pure Lakebase-to-Lakebase
+derivation - no network calls, no Databricks compute.
 
     python -m f1lake.load_strategy
 
@@ -8,14 +9,17 @@ are derived: a driver with two stops ran three stints, and the stop laps are the
 boundaries. The final stint's end lap comes from the driver's completed laps in
 the results mart - without it, every last stint would look open-ended.
 
-This is the cheapest strategically dense data available. Lap times would add
-per-stint PACE, but stop timing alone already answers who pitted first, who
-gambled, and how many stops each strategy took.
+Pit stops themselves are seeded from the governed `f1.silver.fact_pit_stop`
+table by `f1lake.seed_gold.seed_pit_stops()`, not fetched here - this module
+used to fetch them a second time, independently, from Jolpica (harvest/laps.py),
+which was the same shape of duplication weather was before seed_weather()
+existed. `main()` below assumes pit stops are already in Lakebase; run
+`python -m f1lake.seed_gold` first if they are not.
 """
 
-import argparse, glob, json, logging, os
-from psycopg2.extras import execute_values
+import argparse, logging
 from f1lake import schema
+from f1lake.schema import execute_values
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("strategy")
@@ -29,6 +33,11 @@ def parse_duration(value) -> float | None:
     exactly the stops worth finding - a 65-second stop is a race-defining
     failure, not noise, and silently discarding it would have made every
     "slowest stop" query wrong.
+
+    Kept here as a small, independently useful, tested utility even though
+    seed_pit_stops() reads duration_s already parsed by
+    src/pipeline/02c_silver_pitstops.py - the governed pipeline's own parser,
+    not this one.
     """
     if value in (None, ""):
         return None
@@ -44,32 +53,6 @@ def parse_duration(value) -> float | None:
         except (TypeError, ValueError):
             return None
     return None
-
-
-def load_pit_stops(data_dir: str) -> int:
-    rows = []
-    for path in sorted(glob.glob(os.path.join(data_dir, "pitstops", "*.json"))):
-        d = json.load(open(path))
-        for s in d.get("pitstops", []):
-            try:
-                rows.append((d["season"], d["round"], s["driverId"],
-                             int(s["stop"]), int(s["lap"]), s.get("time"),
-                             parse_duration(s.get("duration"))))
-            except (KeyError, TypeError, ValueError) as exc:
-                logger.warning("  skipping malformed stop in %s: %s", path, exc)
-    if not rows:
-        return 0
-    sql = f"""INSERT INTO {schema.PIT_STOPS}
-              (season, round, driver_id, stop_number, lap, time_of_day, duration_s)
-              VALUES %s
-              ON CONFLICT (season, round, driver_id, stop_number) DO UPDATE SET
-                lap=EXCLUDED.lap, time_of_day=EXCLUDED.time_of_day,
-                duration_s=EXCLUDED.duration_s"""
-    with schema.connection() as conn:
-        with conn.cursor() as cur:
-            execute_values(cur, sql, rows, page_size=500)
-            conn.commit()
-    return len(rows)
 
 
 def build_stints() -> int:
@@ -112,7 +95,7 @@ def build_stints() -> int:
                 laps=EXCLUDED.laps, entry_reason=EXCLUDED.entry_reason,
                 exit_reason=EXCLUDED.exit_reason"""
     with schema.connection() as conn:
-        with conn.cursor() as cur:
+        with schema.cursor(conn) as cur:
             execute_values(cur, sql, rows, page_size=500)
             conn.commit()
     return len(rows)
@@ -120,11 +103,9 @@ def build_stints() -> int:
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data", default="data")
-    a = p.parse_args()
+    p.parse_args()
     schema.ensure_schema()
-    logger.info("pit stops loaded: %d", load_pit_stops(a.data))
-    logger.info("stints derived  : %d", build_stints())
+    logger.info("stints derived: %d", build_stints())
     t = schema.query(f"""SELECT (SELECT count(*) FROM {schema.PIT_STOPS}) stops,
                                 (SELECT count(*) FROM {schema.STINTS}) stints,
                                 (SELECT count(DISTINCT (season,round)) FROM {schema.PIT_STOPS}) races""")[0]

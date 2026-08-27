@@ -46,17 +46,32 @@ and .wet_races depend on column-by-column, so it is mapped explicitly rather
 than recreated from whatever race_conditions happens to return.
 
     DATABRICKS_CONFIG_PROFILE=<profile> python -m f1lake.seed_gold
+
+PORTABLE BY DESIGN
+-------------------
+`run_query()` uses the SQL Statement Execution API via `databricks-sdk`
+(`WorkspaceClient().statement_execution`), not the `databricks` CLI. That is
+what makes this module callable identically from a laptop (profile-based auth)
+and from inside a Databricks job (ambient auth, no profile) - see
+`jobs/run_seed_gold.py`, which is a thin wrapper around `main()`. It is also
+what avoids the failure mode the earlier Spark-based job/notebook seeders hit:
+`spark.table(materialized_view).collect()` from job compute forced a recompute
+and killed the kernel. A SQL warehouse query never touches that path - it is
+the exact same query this module always ran, just issued through the SDK
+instead of shelling out to a CLI binary that job compute doesn't have.
 """
 
 import argparse
 import json
 import logging
 import os
-import subprocess
+import time
 
-from psycopg2.extras import execute_values
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.sql import ExecuteStatementRequestOnWaitTimeout, StatementState
 
-from f1lake import schema
+from f1lake import schema, load_strategy
+from f1lake.schema import execute_values
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("seed-gold")
@@ -88,36 +103,84 @@ WET_THRESHOLD_MM = 1.0
 
 CACHE_DIR = "data"
 
+STATEMENT_POLL_SECONDS = 2
+STATEMENT_TIMEOUT_SECONDS = 300
 
-def run_query(sql: str, profile: str, cache_key: str | None = None,
+
+def _client(profile: str | None) -> WorkspaceClient:
+    """A profile means a laptop invocation; None means ambient auth - the case
+    running inside a Databricks job, where the runtime's own identity is used
+    and there is nothing to pass."""
+    return WorkspaceClient(profile=profile) if profile else WorkspaceClient()
+
+
+def _warehouse_id(w: WorkspaceClient) -> str:
+    """Resolve the SQL warehouse. DATABRICKS_WAREHOUSE_ID first (set locally in
+    .env or as a job's environment) - falling back to the first warehouse the
+    caller can see, so this still works with nothing configured beyond auth.
+    """
+    configured = os.environ.get("DATABRICKS_WAREHOUSE_ID")
+    if configured:
+        return configured
+    warehouses = list(w.warehouses.list())
+    if not warehouses:
+        raise RuntimeError(
+            "No SQL warehouse visible to this identity, and DATABRICKS_WAREHOUSE_ID "
+            "is not set. Find one with `databricks warehouses list --profile <profile>`."
+        )
+    return warehouses[0].id
+
+
+def run_query(sql: str, profile: str | None, cache_key: str | None = None,
               refresh: bool = False) -> list[dict]:
-    """Execute one SQL statement against the default warehouse via the CLI.
+    """Execute one SQL statement against a SQL warehouse via the Statement
+    Execution API, and return the rows as plain dicts of strings - the same
+    shape the old CLI-subprocess version returned, so every caller downstream
+    (pg_type, coerce, pick_key) is unchanged.
 
     Results are cached to disk. Free Edition's daily compute quota is
     unrecoverable until the next day, so a seeding run that fails on a Postgres
     detail after the query succeeded must not pay for that query twice. Pass
     --refresh to deliberately re-read from Delta.
-
-    Shelling out to the CLI rather than using the SQL Execution API directly:
-    the CLI already resolves the default warehouse, which the API would need
-    discovered separately - another round trip for no benefit.
     """
     cache_path = os.path.join(CACHE_DIR, f"{cache_key}.json") if cache_key else None
     if cache_path and not refresh and os.path.exists(cache_path):
         logger.info("  (cached — no warehouse query)")
         return json.load(open(cache_path))
 
-    proc = subprocess.run(
-        ["databricks", "experimental", "aitools", "tools", "query", sql,
-         "--profile", profile],
-        capture_output=True, text=True,
+    w = _client(profile)
+    warehouse_id = _warehouse_id(w)
+
+    response = w.statement_execution.execute_statement(
+        warehouse_id=warehouse_id, statement=sql,
+        wait_timeout="30s",
+        on_wait_timeout=ExecuteStatementRequestOnWaitTimeout.CONTINUE,
     )
-    if proc.returncode != 0:
-        raise RuntimeError(f"Query failed:\n{proc.stderr[-800:]}")
-    start = proc.stdout.find("[")
-    if start < 0:
-        raise RuntimeError(f"No JSON in response:\n{proc.stdout[-800:]}")
-    rows = json.loads(proc.stdout[start:])
+    statement_id = response.statement_id
+    waited = 0
+    while response.status.state in (StatementState.PENDING, StatementState.RUNNING):
+        if waited >= STATEMENT_TIMEOUT_SECONDS:
+            raise RuntimeError(f"Query timed out after {STATEMENT_TIMEOUT_SECONDS}s: {sql[:200]}")
+        time.sleep(STATEMENT_POLL_SECONDS)
+        waited += STATEMENT_POLL_SECONDS
+        response = w.statement_execution.get_statement(statement_id)
+
+    if response.status.state != StatementState.SUCCEEDED:
+        error = response.status.error
+        message = error.message if error else str(response.status.state)
+        raise RuntimeError(f"Query failed ({response.status.state}): {message}\n{sql[:200]}")
+
+    columns = [c.name for c in response.manifest.schema.columns]
+    rows = [dict(zip(columns, r)) for r in (response.result.data_array or [])]
+
+    # Large marts can come back in more than one chunk; the first is inline on
+    # the initial response, the rest are fetched by index.
+    chunk = response.result.next_chunk_index
+    while chunk is not None:
+        page = w.statement_execution.get_statement_result_chunk_n(statement_id, chunk)
+        rows.extend(dict(zip(columns, r)) for r in (page.data_array or []))
+        chunk = page.next_chunk_index
+
     if cache_path:
         os.makedirs(CACHE_DIR, exist_ok=True)
         json.dump(rows, open(cache_path, "w"))
@@ -171,7 +234,7 @@ def pick_key(rows: list[dict], columns: list[str],
 
 
 def seed(source: str, target: str, candidates: list[list[str]],
-         profile: str, refresh: bool = False) -> int:
+         profile: str | None, refresh: bool = False) -> int:
     logger.info("Reading %s ...", source)
     rows = run_query(f"SELECT * FROM {source}", profile,
                      cache_key=target, refresh=refresh)
@@ -192,7 +255,7 @@ def seed(source: str, target: str, candidates: list[list[str]],
 
     with schema.connection() as conn:
         conn.autocommit = True
-        with conn.cursor() as cur:
+        with schema.cursor(conn) as cur:
             # Recreated on each seed: the mart is derived data with Delta as the
             # source of truth, so a stale column left behind by an earlier shape
             # would be a lie rather than history worth keeping.
@@ -219,7 +282,7 @@ def seed(source: str, target: str, candidates: list[list[str]],
         f"VALUES %s ON CONFLICT ({key_ddl}) DO UPDATE SET {updates}"
     )
     with schema.connection() as conn:
-        with conn.cursor() as cur:
+        with schema.cursor(conn) as cur:
             execute_values(cur, insert, list(deduped.values()), page_size=500)
             conn.commit()
 
@@ -227,7 +290,7 @@ def seed(source: str, target: str, candidates: list[list[str]],
     return len(deduped)
 
 
-def seed_weather(profile: str, refresh: bool = False) -> int:
+def seed_weather(profile: str | None, refresh: bool = False) -> int:
     """Seed f1_race_weather from the governed `f1.gold.race_conditions` mart.
 
     Mapped explicitly rather than through seed()'s auto-schema path: the target
@@ -269,32 +332,91 @@ def seed_weather(profile: str, refresh: bool = False) -> int:
             source=EXCLUDED.source, synced_at=now()
     """
     with schema.connection() as conn:
-        with conn.cursor() as cur:
+        with schema.cursor(conn) as cur:
             execute_values(cur, sql, payload, page_size=500)
             conn.commit()
     logger.info("  -> %s: %d rows", schema.WEATHER, len(payload))
     return len(payload)
 
 
+def seed_pit_stops(profile: str | None, refresh: bool = False) -> int:
+    """Seed f1_pit_stops from the governed `f1.silver.fact_pit_stop` table.
+
+    Pit stops used to be fetched a second time, independently, from Jolpica by
+    harvest/laps.py - the same shape of duplication weather was before
+    seed_weather() existed. src/ingestion/config.py already lists `pitstops`
+    as a governed round-level endpoint, and
+    src/pipeline/02c_silver_pitstops.py already parses both duration formats
+    (plain seconds and M:SS.mmm) and flags real service stops vs. red-flag
+    stoppages. Reading it here removes the second fetch entirely.
+
+    Mapped explicitly, like seed_weather(): f1_pit_stops has a fixed shape
+    f1_broker.race_strategy and load_strategy.build_stints() depend on
+    column-by-column.
+    """
+    logger.info("Reading f1.silver.fact_pit_stop ...")
+    rows = run_query("SELECT * FROM f1.silver.fact_pit_stop", profile,
+                     cache_key="f1_pit_stops", refresh=refresh)
+    logger.info("  %d pit stops", len(rows))
+    if not rows:
+        return 0
+
+    payload = [
+        (
+            int(r["season"]), int(r["round"]), r["driver_id"],
+            int(r["stop_number"]), int(r["lap"]), r["stop_time_of_day"],
+            coerce(r["duration_s"], "DOUBLE PRECISION"),
+        )
+        for r in rows
+    ]
+    sql = f"""
+        INSERT INTO {schema.PIT_STOPS}
+            (season, round, driver_id, stop_number, lap, time_of_day, duration_s)
+        VALUES %s
+        ON CONFLICT (season, round, driver_id, stop_number) DO UPDATE SET
+            lap=EXCLUDED.lap, time_of_day=EXCLUDED.time_of_day,
+            duration_s=EXCLUDED.duration_s
+    """
+    with schema.connection() as conn:
+        with schema.cursor(conn) as cur:
+            execute_values(cur, sql, payload, page_size=500)
+            conn.commit()
+    logger.info("  -> %s: %d rows", schema.PIT_STOPS, len(payload))
+    return len(payload)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    # No hardcoded default: a default profile means a fork's seed run silently
-    # targets a workspace its author never heard of. Falls back to
-    # DATABRICKS_CONFIG_PROFILE so it still composes with the rest of the repo's
-    # env-var convention.
-    p.add_argument("--profile", default=os.environ.get("DATABRICKS_CONFIG_PROFILE"),
-                   required="DATABRICKS_CONFIG_PROFILE" not in os.environ)
+    # No hardcoded default and no requirement: a default profile means a
+    # fork's seed run silently targets a workspace its author never heard of,
+    # and inside a Databricks job there is no profile at all - the runtime's
+    # own identity is used. Falls back to DATABRICKS_CONFIG_PROFILE locally.
+    p.add_argument("--profile", default=os.environ.get("DATABRICKS_CONFIG_PROFILE"))
     p.add_argument("--refresh", action="store_true",
                    help="re-read from Delta instead of using the cached result")
+    # Job compute has no CLI profile to resolve a default warehouse from, so
+    # the bundle passes this explicitly (spark_python_task parameters, not an
+    # env var - see resources/f1_jobs.yml). Locally, DATABRICKS_WAREHOUSE_ID
+    # or warehouse auto-discovery (_warehouse_id) cover it without this flag.
+    p.add_argument("--warehouse-id", default=None)
     args = p.parse_args()
+    if args.warehouse_id:
+        os.environ["DATABRICKS_WAREHOUSE_ID"] = args.warehouse_id
 
     schema.ensure_schema()
     total = seed_weather(args.profile, args.refresh)
+    total += seed_pit_stops(args.profile, args.refresh)
     for source, target, candidates in MARTS:
         total += seed(source, target, candidates, args.profile, args.refresh)
-    logger.info("\nSeeded %d rows across %d marts. "
+
+    logger.info("Deriving stints from seeded pit stops ...")
+    stints = load_strategy.build_stints()
+    logger.info("  -> %s: %d rows", schema.STINTS, stints)
+    total += stints
+
+    logger.info("\nSeeded %d rows across %d marts plus pit stops and stints. "
                 "No further warehouse compute is needed to serve them.",
-                total, len(MARTS) + 1)
+                total, len(MARTS))
 
 
 if __name__ == "__main__":

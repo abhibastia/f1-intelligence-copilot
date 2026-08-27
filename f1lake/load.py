@@ -23,9 +23,8 @@ import json
 import logging
 import os
 
-from psycopg2.extras import execute_values
-
 from f1lake import embedder, schema
+from f1lake.schema import execute_values
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("load")
@@ -108,15 +107,33 @@ def load_races(path: str) -> int:
             wikipedia_url=EXCLUDED.wikipedia_url
     """
     with schema.connection() as conn:
-        with conn.cursor() as cur:
+        with schema.cursor(conn) as cur:
             execute_values(cur, sql, rows, page_size=100)
             conn.commit()
     return len(rows)
 
 
-def load_documents(path: str) -> tuple[int, int]:
-    """Load race-report sections as documents. Returns (reports, sections)."""
-    reports = json.load(open(path))
+def harvested_races() -> set[tuple[int, int]]:
+    """(season, round) pairs that already have at least one document.
+
+    The durable equivalent of harvest/run.py's local "already have" check
+    against race_reports.json - used by jobs/run_harvest.py, where progress
+    has to be checked against Lakebase because ephemeral job compute has no
+    local file that survives a retry.
+    """
+    return {(r["season"], r["round"]) for r in
+            schema.query(f"SELECT DISTINCT season, round FROM {schema.DOCUMENTS}")}
+
+
+def load_documents(reports: list[dict]) -> tuple[int, int]:
+    """Load race-report sections as documents. Returns (reports, sections).
+
+    Takes reports already in memory rather than a file path, so one race can
+    be written immediately after it's fetched (see harvest.wikipedia.
+    fetch_and_store) instead of accumulating in memory until a batch write at
+    the end - which is fine on a laptop but loses everything on ephemeral job
+    compute if the process is killed before that final write.
+    """
     rows = []
     for report in reports:
         for label, body in disambiguate(report["sections"]):
@@ -136,7 +153,7 @@ def load_documents(path: str) -> tuple[int, int]:
             synced_at=now()
     """
     with schema.connection() as conn:
-        with conn.cursor() as cur:
+        with schema.cursor(conn) as cur:
             execute_values(cur, sql, rows, page_size=100)
             conn.commit()
     return len(reports), len(rows)
@@ -190,7 +207,7 @@ def load_embeddings(batch_size: int = 64, rebuild: bool = False) -> int:
 
     written = 0
     with schema.connection() as conn:
-        with conn.cursor() as cur:
+        with schema.cursor(conn) as cur:
             for start in range(0, len(pending), batch_size):
                 batch = pending[start:start + batch_size]
                 vectors = embedder.embed_texts([b[6] for b in batch])
@@ -220,7 +237,8 @@ def main() -> None:
     logger.info("  %d races", load_races(os.path.join(args.data, "races.json")))
 
     logger.info("Loading race reports ...")
-    reports, sections = load_documents(os.path.join(args.data, "race_reports.json"))
+    with open(os.path.join(args.data, "race_reports.json")) as fh:
+        reports, sections = load_documents(json.load(fh))
     logger.info("  %d reports -> %d sections", reports, sections)
 
     logger.info("Embedding ...")

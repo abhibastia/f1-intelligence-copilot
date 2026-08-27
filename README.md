@@ -63,10 +63,12 @@ flowchart TD
         O["Open-Meteo<br/><small>ERA5 archive</small>"]
     end
 
-    subgraph DBX[" Databricks: governed medallion pipeline "]
+    subgraph DBX[" Databricks Jobs — everything below runs on Databricks "]
         direction TB
         ING["f1_ingest_incremental<br/><small>Job · Jolpica → Volume</small>"]
         MED["f1_medallion_pipeline<br/><small>Lakeflow · Bronze → Silver → Gold<br/>SCD-2 via AUTO CDC</small>"]
+        HAR["f1_full_refresh: harvest<br/><small>Wikipedia race reports</small>"]
+        SEED["f1_full_refresh: seed_gold<br/><small>weather · pit stops · 6 marts · stints</small>"]
     end
 
     J --> ING --> VOL[("UC Volume<br/>f1.raw.landing")] --> MED
@@ -75,9 +77,9 @@ flowchart TD
     GOLD --> DASH["AI/BI Dashboard<br/><small>6 decision pages</small>"]
     GOLD --> GENIE["Genie space<br/><small>NL → SQL over Gold</small>"]
 
-    W --> HAR["harvest/<br/><small>Wikipedia race reports<br/>+ pit stops (local, no compute)</small>"]
-    J --> HAR
-    GOLD -- "seeded: 6 marts" --> SEED["f1lake.seed_gold<br/><small>2 warehouse queries + 1 seed run</small>"]
+    W --> HAR
+    MED -. "fact_pit_stop" .-> SEED
+    GOLD -- "seeded: 6 marts + weather" --> SEED
 
     HAR --> LB
     SEED --> LB
@@ -105,8 +107,8 @@ flowchart TD
     class MCP,UI,DASH,GENIE app
 ```
 
-**Dataflow in one line:** three APIs → governed Spark medallion (Delta) + local
-Wikipedia harvest → three read surfaces off Gold (dashboard, Genie, Lakebase) →
+**Dataflow in one line:** three APIs → governed Spark medallion (Delta) + a
+Databricks job harvesting Wikipedia → three read surfaces off Gold (dashboard, Genie, Lakebase) →
 agent reads and writes Lakebase → tool calls flow back to Delta through Change
 Data Feed → surfaced in the chat app.
 
@@ -131,11 +133,12 @@ than a per-turn cost.
 | `docs/architecture.md` | Pipeline design record and data dictionary | capstone |
 | `docs/copilot_design.md` | Agent/RAG design record | copilot |
 | `docs/runbook.md` | Operations and failure modes | capstone |
-| `harvest/` | Wikipedia race reports + pit stops (local, no Databricks compute) | copilot |
+| `harvest/` | Wikipedia race reports — runs as a Databricks job (`jobs/run_harvest.py`) or locally for testing | copilot |
 | `f1lake/` | Lakebase schema, loaders, embedding, Gold→Lakebase seeding | copilot |
+| `jobs/` | Databricks job entry points for harvest, embed, seed_gold | copilot |
 | `mcp_server/` | MCP server app — 17 tools over streamable HTTP | copilot |
 | `app/` | Strategy Copilot app — frontend, in-process agent, dashboards | copilot |
-| `notebooks/` | Gold→Lakebase seeding and CDF→Delta analytics jobs | copilot |
+| `notebooks/` | CDF→Delta analytics job | copilot |
 | `resources/`, `databricks.yml` | One merged Asset Bundle: pipeline, jobs, dashboard | both |
 | `scripts/` | Catalog provisioning, access control, bootstrap, app build, validation | both |
 | `tests/` | Pipeline contract tests, agent/resolution tests, bundle checks | both |
@@ -233,26 +236,35 @@ handful of API calls, not hundreds.
 To backfill locally instead: `python3 src/ingestion/ingest.py --mode backfill
 --root ./landing`, then `./scripts/upload_landing.sh`.
 
-### Step 2 — Harvest race reports (local, no Databricks compute)
+### Steps 2–3 — Harvest, embed and seed Lakebase (on Databricks)
+
+The whole Lakebase-serving layer — Wikipedia harvest, embedding, and seeding
+all six Gold marts (plus weather, pit stops and derived stints) — runs as one
+Databricks job:
+
+```bash
+databricks bundle run f1_full_refresh -t dev --profile <profile>
+```
+
+`harvest` writes each race to Lakebase immediately after fetching it, so a
+retry only re-fetches what's missing; `embed` and `seed_gold` need no
+`--profile` at all — they authenticate as the job's own runtime identity. See
+`resources/f1_jobs.yml` for what's verified and why (short version: it used to
+crash with a generic "Python process exited unexpectedly" that turned out to
+be `psycopg2-binary`'s compiled OpenSSL colliding with the serverless
+runtime's own native extensions — fixed by switching to `pg8000`, a
+pure-Python driver).
+
+**For local testing only**, the same modules run standalone:
 
 ```bash
 python3 -m harvest.run                   # Wikipedia race reports
 python3 -m f1lake.load                   # chunk, embed, load to Lakebase
-python3 -m f1lake.load_strategy          # pit stops → derived stints
+python3 -m f1lake.load_strategy          # derive stints (after seed_gold)
+python3 -m f1lake.seed_gold --profile <profile>   # weather, pit stops, six marts
 ```
 
-Embedding runs locally on purpose: a Free Edition serverless notebook is
-memory-killed loading `sentence-transformers`/`torch`.
-
-### Step 3 — Seed Gold into Lakebase
-
-```bash
-python3 -m f1lake.seed_gold --profile <profile>
-```
-
-Seeds all six Gold marts, including weather (mapped from `race_conditions`
-rather than fetched separately) — a handful of warehouse queries, cached to
-`data/*.json` so a retry after a Postgres-side failure doesn't re-spend them.
+or the whole thing at once: `python3 scripts/full_refresh.py`.
 
 ### Step 4 — Deploy the two apps
 
@@ -407,10 +419,12 @@ streaming-compatible `agent_tool_calls` table.
   project's central finding, not a hidden flaw.
 - **`f1_race_weather` no longer carries `wind_gusts_max` or `temp_mean`.**
   `race_conditions` doesn't compute them at its grain.
-- **Two of the six seeding paths are unverified end to end on Free Edition.**
-  `jobs/run_seed_gold.py` and `notebooks/seed_gold_to_lakebase.py` (Spark-based)
-  inherit the same serverless-kernel crash the standalone copilot documented;
-  `python -m f1lake.seed_gold` (the CLI-query bridge) is the verified path.
+- **The CDF analytics job fails when launched from the bundle.**
+  `f1_cdf_analytics`'s notebook task succeeds via `databricks jobs submit` and
+  fails with "Fatal error: The Python kernel is unresponsive" when triggered
+  by `databricks bundle run` instead — same code, different trigger path. See
+  `resources/f1_jobs.yml` for the verified command. It runs on Databricks
+  either way; only the trigger mechanism is affected.
 - **Single user.** Writes are keyed `user_id='default'`.
 - **The access model cannot be demonstrated on a single-owner workspace.**
   Grants are applied and correct, but ownership outranks every one of them.

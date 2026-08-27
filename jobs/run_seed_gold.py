@@ -1,9 +1,18 @@
-"""Databricks task: seed the Delta Gold marts into Lakebase.
+"""Databricks task: seed the Delta Gold marts (plus weather and pit stops)
+into Lakebase.
 
-Reads Gold with Spark rather than through the SQL warehouse, which is both
-cheaper and the natural thing to do from inside a job. Delta stays the source of
-truth; Lakebase is the serving copy the agent and apps read, so a page render or
-an agent turn costs no warehouse compute.
+Thin wrapper around f1lake.seed_gold.main() - the same module the verified
+local CLI runs (`python -m f1lake.seed_gold`). There is no separate
+Databricks-only implementation any more: the earlier version of this file read
+Gold with `spark.table(x).collect()`, which forced a recompute on a
+materialized view and killed the kernel. f1lake.seed_gold reads through the
+SQL Statement Execution API instead - the exact same warehouse query the
+verified local path always used, just issued via databricks-sdk instead of
+shelling out to the `databricks` CLI (which isn't present in job compute).
+That is what makes one implementation correct in both places: called with no
+`--profile`, it uses this job's own ambient identity. `--warehouse-id` arrives
+via resources/f1_jobs.yml's spark_python_task `parameters`, since job compute
+has no CLI profile to auto-discover a default warehouse from.
 """
 import logging, os, sys
 
@@ -12,60 +21,6 @@ log = logging.getLogger("seed-job")
 _here = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
 sys.path.insert(0, os.path.dirname(_here))
 
-from pyspark.sql import SparkSession
-from psycopg2.extras import execute_values
-from f1lake import schema
+from f1lake import seed_gold
 
-spark = SparkSession.builder.getOrCreate()
-schema.ensure_schema()
-
-MARTS = [("f1.gold.driver_performance", "f1_driver_performance",
-          ["season", "round", "driver_id"]),
-         ("f1.gold.championship_progression", "f1_championship",
-          ["season", "round", "driver_id"]),
-         ("f1.gold.race_strategy", schema.RACE_STRATEGY_SUMMARY,
-          ["season", "round", "driver_id"]),
-         ("f1.gold.lap_pace", schema.LAP_PACE,
-          ["season", "round", "driver_id"]),
-         ("f1.gold.constructor_standings", schema.CONSTRUCTOR_STANDINGS,
-          ["season", "round", "constructor_id"])]
-
-# race_conditions -> f1_race_weather needs the same explicit column mapping as
-# f1lake.seed_gold.seed_weather() (the target table's shape is fixed, read
-# column-by-column by f1_broker). Not reproduced here: this task type is the
-# unverified path (see resources/f1_jobs.yml) — `python -m f1lake.seed_gold`,
-# run locally, is what actually seeds weather today.
-
-PG = {"bigint": "BIGINT", "int": "BIGINT", "long": "BIGINT", "smallint": "BIGINT",
-      "double": "DOUBLE PRECISION", "float": "DOUBLE PRECISION",
-      "boolean": "BOOLEAN", "date": "DATE", "timestamp": "TIMESTAMPTZ"}
-
-for source, target, keys in MARTS:
-    df = spark.table(source)
-    cols = df.columns
-    types = {f.name: PG.get(f.dataType.simpleString().split("(")[0], "TEXT")
-             for f in df.schema.fields}
-    rows = [tuple(r[c] for c in cols) for r in df.collect()]
-    log.info("%s -> %s: %d rows, %d columns", source, target, len(rows), len(cols))
-
-    ddl = ",\n  ".join(f'"{c}" {types[c]}' for c in cols)
-    with schema.connection() as conn:
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            # Recreated each run: the mart is derived, Delta is the source of
-            # truth, and a stale column from an earlier shape would be a lie.
-            cur.execute(f"DROP TABLE IF EXISTS {target}")
-            cur.execute(f'CREATE TABLE {target} (\n  {ddl},\n  '
-                        f'PRIMARY KEY ({", ".join(chr(34)+k+chr(34) for k in keys)}))')
-
-    seen = {}
-    for row in rows:
-        seen[tuple(row[cols.index(k)] for k in keys)] = row
-    with schema.connection() as conn:
-        with conn.cursor() as cur:
-            execute_values(
-                cur,
-                f'INSERT INTO {target} ({", ".join(chr(34)+c+chr(34) for c in cols)}) VALUES %s',
-                list(seen.values()), page_size=500)
-            conn.commit()
-    log.info("  seeded %d row(s)", len(seen))
+seed_gold.main()

@@ -78,6 +78,19 @@ from both halves. `docs/architecture.md` is the pipeline design record;
     regenerates them from the canonical copies. Run it (both `app` and
     `mcp_server`) before committing a change to `f1lake/{schema,embedder,
     __init__}.py` or `mcp_server/f1_broker.py`, and check `git diff` for drift.
+12. **Lakebase connects via `pg8000`, never `psycopg2`/`psycopg2-binary`.**
+    Verified live: `import psycopg2` SIGABRTs immediately inside a Databricks
+    `spark_python_task` (job compute already has pandas/pyarrow/grpc loaded in
+    the same process — a documented ABI-collision crash class for
+    psycopg2-binary's bundled OpenSSL, worse on ARM64). It worked in local dev
+    and in the Databricks Apps runtime, which is why it went undetected until
+    `jobs/run_harvest.py` and `jobs/run_seed_gold.py` were actually run as
+    jobs — see `resources/f1_jobs.yml`. pg8000 is pure Python, so this class of
+    crash cannot recur. Two non-obvious API differences if you touch
+    `f1lake/schema.py`: pg8000 cursors don't support the context-manager
+    protocol (use `schema.cursor(conn)`, not `conn.cursor()`, in a `with`), and
+    `cursor.execute(sql, None)` raises `TypeError: object of type 'NoneType'
+    has no len()` — pass `()` for no parameters, not `None`.
 
 ## API conventions
 

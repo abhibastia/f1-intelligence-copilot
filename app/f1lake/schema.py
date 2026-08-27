@@ -16,14 +16,27 @@ Postgres grants table ownership to whoever ran CREATE TABLE. Tables created via
 psql would be readable by the app but never alterable or indexable by it, which
 surfaces much later as a 42501 on CREATE INDEX. Creating them here means the
 role that reads and writes also owns.
+
+WHY pg8000, NOT psycopg2
+-------------------------
+psycopg2-binary bundles its own compiled OpenSSL/libpq. On Databricks
+serverless job compute the kernel already has other native extensions loaded
+(pandas, pyarrow, grpc) before this module ever imports - `import psycopg2`
+there SIGABRTs immediately, deterministically, before a single query runs. It
+worked locally and in the Databricks Apps runtime, which is why it went
+undetected until jobs/run_harvest.py and jobs/run_seed_gold.py were actually
+run as jobs. pg8000 is pure Python - no compiled extension, so no ABI/symbol
+collision is possible - and DBAPI-compatible enough (`%s` paramstyle, the same
+exception hierarchy shape) that every call site above this module is
+unchanged; only this module's connection and cursor handling differ.
 """
 
 import base64
 import os
 from contextlib import contextmanager
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from pg8000 import dbapi
+from urllib.parse import urlparse
 
 _SCOPE = os.environ.get("LAKEBASE_SECRET_SCOPE", "database")
 _KEY = os.environ.get("LAKEBASE_SECRET_KEY", "lakebase-url")
@@ -78,12 +91,12 @@ def lakebase_url() -> str:
 def safe_message(exc: Exception) -> str:
     """An exception message that is safe to show a user.
 
-    psycopg2 puts the connection target in its errors - `could not translate
-    host name "ep-....cloud.databricks.com"`, and for an auth failure the role
-    name too. Those strings travel: a tool failure becomes an "error" field in
-    the tool result, which the agent repeats and the UI renders in the trace.
-    A Lakebase outage would therefore print the database hostname into every
-    visitor's browser.
+    The driver puts the connection target in its errors - `could not
+    translate host name "ep-....cloud.databricks.com"`, and for an auth
+    failure the role name too. Those strings travel: a tool failure becomes an
+    "error" field in the tool result, which the agent repeats and the UI
+    renders in the trace. A Lakebase outage would therefore print the database
+    hostname into every visitor's browser.
 
     Errors we raise ourselves are written for users and pass through unchanged.
     Anything else is replaced; the detail is still logged server-side, where it
@@ -91,14 +104,38 @@ def safe_message(exc: Exception) -> str:
     """
     if isinstance(exc, (ValueError, LookupError)):
         return str(exc)
-    if isinstance(exc, psycopg2.Error):
+    if isinstance(exc, dbapi.Error):
         return "The database is unavailable."
     return "The request could not be completed."
 
 
+def _dictify(cur, rows) -> list[dict]:
+    """pg8000 cursors return plain tuples; every caller here expects dicts, the
+    shape RealDictCursor gave under psycopg2."""
+    columns = [d[0] for d in cur.description]
+    return [dict(zip(columns, row)) for row in rows]
+
+
+@contextmanager
+def cursor(conn):
+    """pg8000 cursors, unlike psycopg2's, don't implement the context manager
+    protocol directly - this restores `with schema.cursor(conn) as cur:` for
+    every call site outside this module without rewriting each one's body."""
+    cur = conn.cursor()
+    try:
+        yield cur
+    finally:
+        cur.close()
+
+
 @contextmanager
 def connection():
-    conn = psycopg2.connect(lakebase_url(), cursor_factory=RealDictCursor)
+    url = urlparse(lakebase_url())
+    conn = dbapi.connect(
+        host=url.hostname, port=url.port or 5432,
+        database=url.path.lstrip("/"), user=url.username, password=url.password,
+        ssl_context=True,
+    )
     try:
         yield conn
     finally:
@@ -107,9 +144,11 @@ def connection():
 
 def query(sql: str, params: tuple | dict | None = None) -> list[dict]:
     with connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
+        cur = conn.cursor()
+        cur.execute(sql, params or ())
+        rows = _dictify(cur, cur.fetchall())
+        cur.close()
+        return rows
 
 
 def returning(sql: str, params: tuple | dict | None = None) -> list[dict]:
@@ -125,11 +164,12 @@ def returning(sql: str, params: tuple | dict | None = None) -> list[dict]:
     query(); the two are not interchangeable.
     """
     with connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-            conn.commit()
-            return rows
+        cur = conn.cursor()
+        cur.execute(sql, params or ())
+        rows = _dictify(cur, cur.fetchall())
+        conn.commit()
+        cur.close()
+        return rows
 
 
 def log_tool_call(tool_name: str, arguments: dict, outcome: str,
@@ -149,17 +189,18 @@ def log_tool_call(tool_name: str, arguments: dict, outcome: str,
     import json as _json
     try:
         with connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""INSERT INTO {TOOL_CALLS}
-                        (session_id, tool_name, is_write, arguments, outcome,
-                         summary, duration_ms)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                    (session_id, tool_name, is_write,
-                     _json.dumps(arguments, default=str), outcome,
-                     summary, duration_ms),
-                )
-                conn.commit()
+            cur = conn.cursor()
+            cur.execute(
+                f"""INSERT INTO {TOOL_CALLS}
+                    (session_id, tool_name, is_write, arguments, outcome,
+                     summary, duration_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (session_id, tool_name, is_write,
+                 _json.dumps(arguments, default=str), outcome,
+                 summary, duration_ms),
+            )
+            conn.commit()
+            cur.close()
     except Exception:
         import logging as _logging
         _logging.getLogger("schema").warning(
@@ -168,10 +209,39 @@ def log_tool_call(tool_name: str, arguments: dict, outcome: str,
 
 def execute(sql: str, params: tuple | dict | None = None) -> int:
     with connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            conn.commit()
-            return cur.rowcount
+        cur = conn.cursor()
+        cur.execute(sql, params or ())
+        conn.commit()
+        rowcount = cur.rowcount
+        cur.close()
+        return rowcount
+
+
+def execute_values(cur, sql: str, argslist: list[tuple], template: str | None = None,
+                   page_size: int = 100) -> None:
+    """Batch-insert many rows in one statement each, psycopg2.extras.execute_values'
+    call shape - `sql` contains a literal `VALUES %s` that gets expanded to
+    `VALUES (%s,...),(%s,...),...` per page, with `template` overriding the
+    per-row placeholder group (e.g. to add a `::vector` cast or a literal
+    `now()`). Reimplemented here, rather than imported, because pg8000 (see the
+    module docstring for why it replaced psycopg2) has no bulk-values helper -
+    every call site elsewhere in f1lake was written against psycopg2.extras'
+    signature and is unchanged by this swap.
+    """
+    if not argslist:
+        return
+    if "%s" not in sql:
+        raise ValueError("execute_values() requires a literal VALUES %s in sql")
+
+    for start in range(0, len(argslist), page_size):
+        page = argslist[start:start + page_size]
+        if template:
+            group = template
+        else:
+            group = "(" + ",".join(["%s"] * len(page[0])) + ")"
+        values_sql = ",".join([group] * len(page))
+        flat_params = [v for row in page for v in row]
+        cur.execute(sql.replace("%s", values_sql, 1), flat_params)
 
 
 DDL = [
@@ -369,14 +439,21 @@ def ensure_schema() -> None:
     """
     with connection() as conn:
         conn.autocommit = True
-        with conn.cursor() as cur:
-            for statement in DDL:
-                try:
-                    cur.execute(statement)
-                except psycopg2.errors.InsufficientPrivilege:
+        cur = conn.cursor()
+        for statement in DDL:
+            try:
+                cur.execute(statement)
+            except dbapi.DatabaseError as exc:
+                # 42501 = insufficient_privilege. pg8000 surfaces the SQLSTATE
+                # as exc.args[0]["C"] (the wire protocol's ErrorResponse
+                # fields), not as a distinct exception class the way
+                # psycopg2.errors.InsufficientPrivilege does.
+                if isinstance(exc.args[0], dict) and exc.args[0].get("C") == "42501":
                     # Only CREATE EXTENSION should reach here. Anything else
                     # genuinely failing surfaces later as a missing table.
                     continue
+                raise
+        cur.close()
 
 
 def smoke_test() -> int:

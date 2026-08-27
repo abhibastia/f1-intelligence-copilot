@@ -116,17 +116,16 @@ class TestWikipediaParsing:
 class TestErrorMessagesAreSafe:
     """Tool errors travel: an exception message becomes an "error" field in the
     tool result, which the agent repeats and the UI renders in the trace. A
-    psycopg2 failure names the host and role it could not reach."""
+    driver failure names the host and role it could not reach."""
 
     def test_database_errors_do_not_leak_the_connection_target(self):
-        import psycopg2
+        from pg8000 import dbapi
         from f1lake import schema
         try:
-            psycopg2.connect(
-                "postgresql://someuser:hunter2@secret-host.example.com:5432/db",
-                connect_timeout=1)
+            dbapi.connect(host="secret-host.example.com", port=5432, database="db",
+                          user="someuser", password="hunter2", timeout=1)
             raise AssertionError("expected the connection to fail")
-        except psycopg2.Error as exc:
+        except dbapi.Error as exc:
             safe = schema.safe_message(exc)
         assert "secret-host" not in safe
         assert "someuser" not in safe and "hunter2" not in safe

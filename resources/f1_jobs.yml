@@ -8,49 +8,72 @@
 # VERIFICATION STATUS — stated because a deployed job definition is not
 # evidence that it ran.
 #
+#   VERIFIED on Databricks, end to end, by deploying this bundle and running
+#   f1_full_refresh for real against a live workspace:
+#     f1_ingest_incremental   (in resources/) — calls Jolpica, lands the Volume
+#     f1_medallion_pipeline   (in resources/) — Bronze -> Silver -> Gold
+#     harvest                 — fetched a real newly-added race (2026 Dutch GP)
+#                                and wrote it to Lakebase immediately
+#     embed                   — loaded sentence-transformers and embedded the
+#                                new chunks
+#     seed_gold               — seeded weather, pit stops, all six Gold marts
+#                                and derived stints via the SQL Statement
+#                                Execution API, with no --profile (ambient
+#                                job-runtime auth)
+#
+#   `harvest` and `seed_gold` both used to fail as spark_python_task jobs with
+#   the generic "The Python process exited unexpectedly". The actual cause,
+#   found by running the job for real and reading the driver logs instead of
+#   guessing from that message: `import psycopg2` SIGABRTs immediately inside
+#   f1lake/schema.py, before either task's own code runs at all.
+#   psycopg2-binary bundles a compiled OpenSSL/libpq, and this serverless
+#   kernel already has other native extensions (pandas, pyarrow, grpc) loaded
+#   in the same process before a spark_python_task's own imports even start -
+#   a documented crash class for psycopg2-binary, worse on ARM64. (Two earlier
+#   guesses lived in this comment block - a materialized-view recompute for
+#   seed_gold, an unresponsive-kernel timeout for harvest. Both were plausible
+#   from the vague error alone and both were wrong: the two tasks failed at
+#   the identical import line regardless of what they otherwise did.)
+#
+#   Fix: f1lake/schema.py now uses pg8000, a pure-Python driver with no
+#   compiled extension, so no native ABI collision is possible. `harvest` also
+#   keeps a retry policy and a generous timeout regardless, since each race is
+#   written to Lakebase immediately after it's fetched
+#   (harvest.wikipedia.fetch_and_store) rather than batched to the end - a
+#   genuinely slow or throttled run still makes forward progress a retry can
+#   pick up, independent of the crash above. `seed_gold` also now seeds pit
+#   stops from the governed f1.silver.fact_pit_stop table instead of
+#   harvest/laps.py fetching them a second time from Jolpica, and derives
+#   stints afterward - pure Lakebase computation, no network at all.
+#
 #   HOW TO RUN THE CDF JOB (read this before using the bundle definition):
-#     The notebook succeeds when submitted directly and fails reproducibly when
-#     launched from this bundle - three attempts, same notebook, same
-#     parameters, same serverless config, dying with "Fatal Python error:
-#     Aborted". The difference appears to be the bundle files directory it runs
-#     from, not the code. Until that is understood, the verified command is:
+#     f1_cdf_analytics's notebook succeeds when submitted directly and fails
+#     reproducibly when launched from this bundle (or from f1_full_refresh,
+#     confirmed again in the same live run above) - "Fatal error: The Python
+#     kernel is unresponsive". The difference appears to be the bundle files
+#     directory it runs from, not the code, and it is unrelated to the
+#     psycopg2/pg8000 issue above (a different task, a different failure
+#     message). Until that is understood, the verified command is:
 #
 #       databricks workspace import /Workspace/Users/<you>/f1-intelligence-copilot/cdf_agent_analytics \
 #         --file notebooks/cdf_agent_analytics.py --language PYTHON --format SOURCE --overwrite
 #       databricks jobs submit --json @cdf_job.json
 #
 #     The bundle definition is kept because it is the right shape and is what a
-#     reviewer should read; it is not what produced the analytics table.
-#
-#   VERIFIED on Databricks:
-#     f1_ingest_incremental   (in pipeline/) — calls Jolpica, lands the Volume
-#     f1_medallion_pipeline   (in pipeline/) — Bronze -> Silver -> Gold
-#     f1_cdf_analytics        — Change Data Feed -> Delta analytics table
-#     embedding on serverless — probed separately; loads and encodes fine
-#
-#   DEPLOYS BUT NOT VERIFIED END TO END on Free Edition:
-#     harvest    — ~176 sequential HTTP calls; the kernel is killed as
-#                  unresponsive. Databricks' shared egress IP is throttled by
-#                  Wikipedia far harder than a laptop is, so the courtesy delays
-#                  stretch past the kernel's patience. Runs fine locally.
-#     seed_gold  — collecting a MATERIALIZED VIEW to the driver appears to force
-#                  a recompute of the mart rather than a cheap read; the kernel
-#                  dies. Neither switching task type nor splitting dependencies
-#                  changed it. The local seeder does the same work in two
-#                  warehouse queries and is what produced the current data.
-#
-# Both are kept because they are the right shape and are reviewable, and because
-# the limitation is a Free Edition one rather than a defect in the code. Neither
-# is on the critical path: the data they produce is already loaded.
+#     reviewer should read; it is not what produced the analytics table. This
+#     job already runs entirely on Databricks either way - only the trigger
+#     mechanism (bundle-run vs. direct submit) differs.
 
 resources:
   jobs:
 
     # ---------------------------------------------------------------- refresh
-    # One job, four ordered tasks. The order is not cosmetic: harvest lands race
-    # reports and weather, embed turns the new documents into vectors, seeding
-    # copies the Gold marts the pipeline produced, and the CDF task materialises
-    # whatever agent activity has accumulated.
+    # Two independent chains, one job. harvest -> embed turns Wikipedia
+    # articles into vectors; seed_gold runs in parallel, copying the Gold/
+    # Silver marts (weather, pit stops, six marts, derived stints) the
+    # medallion pipeline already produced - nothing in that chain depends on
+    # the other. cdf_analytics waits on seed_gold, because it reads a Gold
+    # table seed_gold's schema.ensure_schema() call also touches.
     f1_full_refresh:
       name: f1_full_refresh
       max_concurrent_runs: 1
@@ -70,14 +93,18 @@ resources:
             client: "3"
             dependencies:
               - requests>=2.31.0
-              - psycopg2-binary>=2.9.9
+              # Pure-Python driver, not psycopg2-binary: the latter's bundled
+              # OpenSSL/libpq SIGABRTs on this serverless runtime when other
+              # native extensions (pandas, pyarrow, grpc) are already loaded
+              # in the process - see f1lake/schema.py.
+              - pg8000>=1.31
               - databricks-sdk>=0.30.0
 
         - environment_key: embedding
           spec:
             client: "3"
             dependencies:
-              - psycopg2-binary>=2.9.9
+              - pg8000>=1.31
               - databricks-sdk>=0.30.0
               - sentence-transformers>=3.0.0
 
@@ -86,19 +113,29 @@ resources:
           spark_python_task:
             python_file: ../jobs/run_harvest.py
           environment_key: light
+          max_retries: 2
+          min_retry_interval_millis: 60000
+          timeout_seconds: 2700
 
         - task_key: embed
           depends_on: [{ task_key: harvest }]
           spark_python_task:
             python_file: ../jobs/run_embed.py
           environment_key: embedding
+          timeout_seconds: 1800
 
+        # No depends_on: seed_gold reads Gold/Silver marts and writes weather,
+        # pit stops and stints, none of which touch the Wikipedia documents
+        # harvest/embed produce - it runs in parallel with that chain, not
+        # after it, the same way the original design intended.
         - task_key: seed_gold
-          notebook_task:
-            notebook_path: ../notebooks/seed_gold_to_lakebase.py
-            base_parameters:
-              lakebase_secret_scope: ${var.lakebase_scope}
-              lakebase_secret_key: ${var.lakebase_key}
+          spark_python_task:
+            python_file: ../jobs/run_seed_gold.py
+            parameters:
+              - "--warehouse-id"
+              - "${var.warehouse_id}"
+          environment_key: light
+          timeout_seconds: 1800
 
         - task_key: cdf_analytics
           depends_on: [{ task_key: seed_gold }]

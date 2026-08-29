@@ -14,7 +14,10 @@ That is what makes one implementation correct in both places: called with no
 via resources/f1_jobs.yml's spark_python_task `parameters`, since job compute
 has no CLI profile to auto-discover a default warehouse from.
 """
-import logging, os, sys
+
+import logging
+import os
+import sys
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("seed-job")

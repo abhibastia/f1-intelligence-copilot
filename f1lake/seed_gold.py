@@ -69,7 +69,7 @@ import time
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.sql import ExecuteStatementRequestOnWaitTimeout, StatementState
 
-from f1lake import schema, load_strategy
+from f1lake import load_strategy, schema
 from f1lake.schema import execute_values
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -82,17 +82,27 @@ logger = logging.getLogger("seed-gold")
 # `driver_id` where an earlier draft assumed `driver_ref`. The first candidate
 # whose columns all exist AND which is actually unique in the data wins.
 MARTS = [
-    ("f1.gold.driver_performance", "f1_driver_performance",
-     [["season", "round", "driver_id"], ["season", "round", "driver_ref"]]),
-    ("f1.gold.championship_progression", "f1_championship",
-     [["season", "round", "driver_id"], ["season", "round", "driver_ref"],
-      ["season", "round", "constructor_id"]]),
-    ("f1.gold.race_strategy", schema.RACE_STRATEGY_SUMMARY,
-     [["season", "round", "driver_id"]]),
-    ("f1.gold.lap_pace", schema.LAP_PACE,
-     [["season", "round", "driver_id"]]),
-    ("f1.gold.constructor_standings", schema.CONSTRUCTOR_STANDINGS,
-     [["season", "round", "constructor_id"]]),
+    (
+        "f1.gold.driver_performance",
+        "f1_driver_performance",
+        [["season", "round", "driver_id"], ["season", "round", "driver_ref"]],
+    ),
+    (
+        "f1.gold.championship_progression",
+        "f1_championship",
+        [
+            ["season", "round", "driver_id"],
+            ["season", "round", "driver_ref"],
+            ["season", "round", "constructor_id"],
+        ],
+    ),
+    ("f1.gold.race_strategy", schema.RACE_STRATEGY_SUMMARY, [["season", "round", "driver_id"]]),
+    ("f1.gold.lap_pace", schema.LAP_PACE, [["season", "round", "driver_id"]]),
+    (
+        "f1.gold.constructor_standings",
+        schema.CONSTRUCTOR_STANDINGS,
+        [["season", "round", "constructor_id"]],
+    ),
 ]
 
 # Kept in step with src/pipeline/02b_silver_weather.py's WET_THRESHOLD_MM. Both
@@ -130,8 +140,9 @@ def _warehouse_id(w: WorkspaceClient) -> str:
     return warehouses[0].id
 
 
-def run_query(sql: str, profile: str | None, cache_key: str | None = None,
-              refresh: bool = False) -> list[dict]:
+def run_query(
+    sql: str, profile: str | None, cache_key: str | None = None, refresh: bool = False
+) -> list[dict]:
     """Execute one SQL statement against a SQL warehouse via the Statement
     Execution API, and return the rows as plain dicts of strings - the same
     shape the old CLI-subprocess version returned, so every caller downstream
@@ -151,7 +162,8 @@ def run_query(sql: str, profile: str | None, cache_key: str | None = None,
     warehouse_id = _warehouse_id(w)
 
     response = w.statement_execution.execute_statement(
-        warehouse_id=warehouse_id, statement=sql,
+        warehouse_id=warehouse_id,
+        statement=sql,
         wait_timeout="30s",
         on_wait_timeout=ExecuteStatementRequestOnWaitTimeout.CONTINUE,
     )
@@ -216,8 +228,7 @@ def coerce(value, column_type: str):
     return value
 
 
-def pick_key(rows: list[dict], columns: list[str],
-             candidates: list[list[str]]) -> list[str]:
+def pick_key(rows: list[dict], columns: list[str], candidates: list[list[str]]) -> list[str]:
     """Choose the first candidate key that exists and is genuinely unique."""
     for candidate in candidates:
         if not all(c in columns for c in candidate):
@@ -225,18 +236,21 @@ def pick_key(rows: list[dict], columns: list[str],
         seen = {tuple(r.get(c) for c in candidate) for r in rows}
         if len(seen) == len(rows):
             return candidate
-        logger.warning("  key %s exists but is not unique (%d/%d distinct)",
-                       candidate, len(seen), len(rows))
-    raise RuntimeError(
-        f"No usable key among {candidates}. Available columns: {columns}"
-    )
+        logger.warning(
+            "  key %s exists but is not unique (%d/%d distinct)", candidate, len(seen), len(rows)
+        )
+    raise RuntimeError(f"No usable key among {candidates}. Available columns: {columns}")
 
 
-def seed(source: str, target: str, candidates: list[list[str]],
-         profile: str | None, refresh: bool = False) -> int:
+def seed(
+    source: str,
+    target: str,
+    candidates: list[list[str]],
+    profile: str | None,
+    refresh: bool = False,
+) -> int:
     logger.info("Reading %s ...", source)
-    rows = run_query(f"SELECT * FROM {source}", profile,
-                     cache_key=target, refresh=refresh)
+    rows = run_query(f"SELECT * FROM {source}", profile, cache_key=target, refresh=refresh)
     if not rows:
         logger.warning("  %s returned no rows - skipping", source)
         return 0
@@ -248,9 +262,10 @@ def seed(source: str, target: str, candidates: list[list[str]],
 
     column_ddl = ",\n            ".join(f'"{c}" {types[c]}' for c in columns)
     key_ddl = ", ".join(f'"{k}"' for k in keys)
-    updates = ", ".join(
-        f'"{c}" = EXCLUDED."{c}"' for c in columns if c not in keys
-    ) or f'"{keys[0]}" = EXCLUDED."{keys[0]}"'
+    updates = (
+        ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in columns if c not in keys)
+        or f'"{keys[0]}" = EXCLUDED."{keys[0]}"'
+    )
 
     with schema.connection() as conn:
         conn.autocommit = True
@@ -277,7 +292,7 @@ def seed(source: str, target: str, candidates: list[list[str]],
 
     column_list = ", ".join(f'"{c}"' for c in columns)
     insert = (
-        f'INSERT INTO {target} ({column_list}) '
+        f"INSERT INTO {target} ({column_list}) "
         f"VALUES %s ON CONFLICT ({key_ddl}) DO UPDATE SET {updates}"
     )
     with schema.connection() as conn:
@@ -298,8 +313,12 @@ def seed_weather(profile: str | None, refresh: bool = False) -> int:
     race_conditions happens to return would silently drop that contract.
     """
     logger.info("Reading f1.gold.race_conditions ...")
-    rows = run_query("SELECT * FROM f1.gold.race_conditions", profile,
-                     cache_key="f1_race_weather", refresh=refresh)
+    rows = run_query(
+        "SELECT * FROM f1.gold.race_conditions",
+        profile,
+        cache_key="f1_race_weather",
+        refresh=refresh,
+    )
     observed = [r for r in rows if r.get("weather_available") in (True, "true", "True")]
     logger.info("  %d races, %d with a weather observation", len(rows), len(observed))
     if not observed:
@@ -307,12 +326,20 @@ def seed_weather(profile: str | None, refresh: bool = False) -> int:
 
     payload = [
         (
-            int(r["season"]), int(r["round"]), r["race_name"], r["race_date"] or None,
-            r["circuit_id"], r["circuit_name"], r["conditions"],
-            coerce(r["temp_max_c"], "DOUBLE PRECISION"), coerce(r["temp_min_c"], "DOUBLE PRECISION"),
-            coerce(r["precipitation_mm"], "DOUBLE PRECISION"), coerce(r["rain_mm"], "DOUBLE PRECISION"),
+            int(r["season"]),
+            int(r["round"]),
+            r["race_name"],
+            r["race_date"] or None,
+            r["circuit_id"],
+            r["circuit_name"],
+            r["conditions"],
+            coerce(r["temp_max_c"], "DOUBLE PRECISION"),
+            coerce(r["temp_min_c"], "DOUBLE PRECISION"),
+            coerce(r["precipitation_mm"], "DOUBLE PRECISION"),
+            coerce(r["rain_mm"], "DOUBLE PRECISION"),
             coerce(r["wind_max_kmh"], "DOUBLE PRECISION"),
-            str(r["was_wet"]).lower() in ("true", "1"), WET_THRESHOLD_MM,
+            str(r["was_wet"]).lower() in ("true", "1"),
+            WET_THRESHOLD_MM,
             "databricks-gold:race_conditions",
         )
         for r in observed
@@ -354,16 +381,21 @@ def seed_pit_stops(profile: str | None, refresh: bool = False) -> int:
     column-by-column.
     """
     logger.info("Reading f1.silver.fact_pit_stop ...")
-    rows = run_query("SELECT * FROM f1.silver.fact_pit_stop", profile,
-                     cache_key="f1_pit_stops", refresh=refresh)
+    rows = run_query(
+        "SELECT * FROM f1.silver.fact_pit_stop", profile, cache_key="f1_pit_stops", refresh=refresh
+    )
     logger.info("  %d pit stops", len(rows))
     if not rows:
         return 0
 
     payload = [
         (
-            int(r["season"]), int(r["round"]), r["driver_id"],
-            int(r["stop_number"]), int(r["lap"]), r["stop_time_of_day"],
+            int(r["season"]),
+            int(r["round"]),
+            r["driver_id"],
+            int(r["stop_number"]),
+            int(r["lap"]),
+            r["stop_time_of_day"],
             coerce(r["duration_s"], "DOUBLE PRECISION"),
         )
         for r in rows
@@ -391,8 +423,11 @@ def main() -> None:
     # and inside a Databricks job there is no profile at all - the runtime's
     # own identity is used. Falls back to DATABRICKS_CONFIG_PROFILE locally.
     p.add_argument("--profile", default=os.environ.get("DATABRICKS_CONFIG_PROFILE"))
-    p.add_argument("--refresh", action="store_true",
-                   help="re-read from Delta instead of using the cached result")
+    p.add_argument(
+        "--refresh",
+        action="store_true",
+        help="re-read from Delta instead of using the cached result",
+    )
     # Job compute has no CLI profile to resolve a default warehouse from, so
     # the bundle passes this explicitly (spark_python_task parameters, not an
     # env var - see resources/f1_jobs.yml). Locally, DATABRICKS_WAREHOUSE_ID
@@ -413,9 +448,12 @@ def main() -> None:
     logger.info("  -> %s: %d rows", schema.STINTS, stints)
     total += stints
 
-    logger.info("\nSeeded %d rows across %d marts plus pit stops and stints. "
-                "No further warehouse compute is needed to serve them.",
-                total, len(MARTS))
+    logger.info(
+        "\nSeeded %d rows across %d marts plus pit stops and stints. "
+        "No further warehouse compute is needed to serve them.",
+        total,
+        len(MARTS),
+    )
 
 
 if __name__ == "__main__":

@@ -34,12 +34,12 @@ import html
 import logging
 import os
 
+import f1_broker
+from f1_broker import UnknownDriverError, UnknownRaceError
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
-import f1_broker
-from f1_broker import UnknownDriverError, UnknownRaceError
 from f1lake import schema
 
 logging.basicConfig(level=logging.INFO)
@@ -56,26 +56,42 @@ def _error(exc: Exception, context: str) -> dict:
     which driver, rather than invent a result.
     """
     if isinstance(exc, UnknownDriverError):
-        return {"error": "unknown_driver", "message": str(exc), "context": context,
-                "suggestion": "Ask the user which driver they mean. Do not guess."}
+        return {
+            "error": "unknown_driver",
+            "message": str(exc),
+            "context": context,
+            "suggestion": "Ask the user which driver they mean. Do not guess.",
+        }
     if isinstance(exc, UnknownRaceError):
-        return {"error": "unknown_race", "message": str(exc), "context": context,
-                "suggestion": "Ask the user to name the race or give a round number."}
+        return {
+            "error": "unknown_race",
+            "message": str(exc),
+            "context": context,
+            "suggestion": "Ask the user to name the race or give a round number.",
+        }
     if isinstance(exc, ValueError):
-        return {"error": "invalid_arguments", "message": str(exc), "context": context,
-                "suggestion": "Correct the arguments and try once more."}
+        return {
+            "error": "invalid_arguments",
+            "message": str(exc),
+            "context": context,
+            "suggestion": "Correct the arguments and try once more.",
+        }
     # str(exc) here is whatever the driver raised. psycopg2 names the host and
     # role it failed to reach, and this message is repeated by the agent and
     # rendered in the UI trace - so the detail goes to the log, not the caller.
     logger.exception("Unexpected failure: %s", context)
-    return {"error": "unexpected_error", "message": schema.safe_message(exc),
-            "context": context,
-            "suggestion": "Tell the user the request failed. Do not invent data."}
+    return {
+        "error": "unexpected_error",
+        "message": schema.safe_message(exc),
+        "context": context,
+        "suggestion": "Tell the user the request failed. Do not invent data.",
+    }
 
 
 # --------------------------------------------------------------------------
 # READ tools
 # --------------------------------------------------------------------------
+
 
 @mcp.tool
 def get_driver_season(driver: str, season: int) -> dict:
@@ -191,8 +207,9 @@ def find_wet_races(season: int | None = None, limit: int = 10) -> dict:
 
 
 @mcp.tool
-def search_race_reports(query: str, top_k: int = 5,
-                        season: int | None = None, round: int | None = None) -> dict:
+def search_race_reports(
+    query: str, top_k: int = 5, season: int | None = None, round: int | None = None
+) -> dict:
     """
     Semantic search over Formula 1 race-report prose.
 
@@ -371,8 +388,7 @@ def get_predictions(season: int | None = None, limit: int = 20) -> dict:
 
 
 @mcp.tool
-def get_race_notes(season: int | None = None, round: int | None = None,
-                   limit: int = 20) -> dict:
+def get_race_notes(season: int | None = None, round: int | None = None, limit: int = 20) -> dict:
     """
     List saved analyst notes, optionally for one race.
 
@@ -393,6 +409,7 @@ def get_race_notes(season: int | None = None, round: int | None = None,
 # --------------------------------------------------------------------------
 # WRITE tools — the agent takes real actions against the database
 # --------------------------------------------------------------------------
+
 
 @mcp.tool
 def add_to_watchlist(entity_type: str, entity_ref: str, note: str | None = None) -> dict:
@@ -419,8 +436,13 @@ def add_to_watchlist(entity_type: str, entity_ref: str, note: str | None = None)
 
 
 @mcp.tool
-def log_prediction(season: int, race: str, prediction: str,
-                   confidence: str = "medium", rationale: str | None = None) -> dict:
+def log_prediction(
+    season: int,
+    race: str,
+    prediction: str,
+    confidence: str = "medium",
+    rationale: str | None = None,
+) -> dict:
     """
     Record a prediction against a specific race. WRITES to the database.
 
@@ -527,6 +549,7 @@ def delete_note(item_id: int) -> dict:
 # indistinguishable from a broken deployment to anyone checking.
 # --------------------------------------------------------------------------
 
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_request: Request) -> JSONResponse:
     """Liveness probe. Does not touch Lakebase, so a database problem cannot
@@ -537,8 +560,14 @@ async def health(_request: Request) -> JSONResponse:
 @mcp.custom_route("/", methods=["GET"])
 async def landing(request: Request) -> HTMLResponse:
     tools = await mcp.list_tools()
-    writes = {"add_to_watchlist", "log_prediction", "save_race_note",
-              "remove_from_watchlist", "delete_prediction", "delete_note"}
+    writes = {
+        "add_to_watchlist",
+        "log_prediction",
+        "save_race_note",
+        "remove_from_watchlist",
+        "delete_prediction",
+        "delete_note",
+    }
     rows = "".join(
         f"<tr><td><code>{html.escape(t.name)}</code></td>"
         f"<td>{'<b>write</b>' if t.name in writes else 'read'}</td>"
@@ -550,8 +579,9 @@ async def landing(request: Request) -> HTMLResponse:
     # MCP registration form.
     fhost = request.headers.get("x-forwarded-host")
     fproto = request.headers.get("x-forwarded-proto", "https")
-    endpoint = html.escape(f"{fproto}://{fhost}/mcp" if fhost
-                           else str(request.url.replace(path="/mcp", query="")))
+    endpoint = html.escape(
+        f"{fproto}://{fhost}/mcp" if fhost else str(request.url.replace(path="/mcp", query=""))
+    )
     return HTMLResponse(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

@@ -39,10 +39,7 @@ try:
     from databricks.sdk.errors import DatabricksError
     from databricks.sdk.service import workspace
 except ImportError:
-    sys.exit(
-        "databricks-sdk is not installed. Run:\n"
-        "    pip install -r requirements-dev.txt"
-    )
+    sys.exit("databricks-sdk is not installed. Run:\n    pip install -r requirements-dev.txt")
 
 SCOPE = "f1"
 
@@ -98,7 +95,7 @@ def main() -> int:
     parser.add_argument(
         "--profile",
         help="Databricks CLI profile. Omit to use DATABRICKS_CONFIG_PROFILE "
-             "or the DEFAULT profile.",
+        "or the DEFAULT profile.",
     )
     args = parser.parse_args()
 

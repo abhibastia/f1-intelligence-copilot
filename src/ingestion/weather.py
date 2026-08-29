@@ -90,16 +90,12 @@ def has_observation(payload: dict[str, Any]) -> bool:
     return bool(values) and values[0] is not None
 
 
-def fetch_race_weather(
-    latitude: float, longitude: float, race_date: dt.date
-) -> dict[str, Any]:
+def fetch_race_weather(latitude: float, longitude: float, race_date: dt.date) -> dict[str, Any]:
     """Fetch one race day. Raises rather than returning a partial result."""
     url = build_url(latitude, longitude, race_date)
     _budget.acquire()
     try:
-        request = urllib.request.Request(
-            url, headers={"User-Agent": "f1-intelligence-copilot/1.0"}
-        )
+        request = urllib.request.Request(url, headers={"User-Agent": "f1-intelligence-copilot/1.0"})
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:

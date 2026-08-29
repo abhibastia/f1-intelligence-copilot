@@ -75,5 +75,9 @@ build/
 # --- Editors and OS -----------------------------------------------------------
 .idea/
 .vscode/
-.claude/
+# .claude/settings.json is the project's tracked, shared hook/permission
+# config; .claude/settings.local.json (and everything else under .claude/)
+# stays personal and ignored.
+.claude/*
+!.claude/settings.json
 .DS_Store

@@ -17,6 +17,7 @@ weather rule sets — three of the six rule dicts in the pipeline — were never
 checked at all. It now walks every Silver file, and prints the per-file tally so
 a file silently contributing nothing is visible rather than assumed clean.
 """
+
 import ast
 import glob
 import re
@@ -25,9 +26,30 @@ import sys
 PATHS = sorted(glob.glob("src/pipeline/0[23]*.py"))
 
 SQL_WORDS = {
-    "IS", "NOT", "NULL", "OR", "AND", "BETWEEN", "IN", "LIKE", "WHEN", "CASE",
-    "THEN", "ELSE", "END", "TRUE", "FALSE", "CAST", "AS", "INT", "DOUBLE",
-    "STRING", "DATE", "LENGTH", "SIZE", "COALESCE",
+    "IS",
+    "NOT",
+    "NULL",
+    "OR",
+    "AND",
+    "BETWEEN",
+    "IN",
+    "LIKE",
+    "WHEN",
+    "CASE",
+    "THEN",
+    "ELSE",
+    "END",
+    "TRUE",
+    "FALSE",
+    "CAST",
+    "AS",
+    "INT",
+    "DOUBLE",
+    "STRING",
+    "DATE",
+    "LENGTH",
+    "SIZE",
+    "COALESCE",
 }
 
 
@@ -78,8 +100,7 @@ def analyse(tree):
             target = node.targets[0]
             if isinstance(target, ast.Name):
                 rules[target.id] = {
-                    k.value: v.value
-                    for k, v in zip(node.value.keys, node.value.values)
+                    k.value: v.value for k, v in zip(node.value.keys, node.value.values)
                 }
         if isinstance(node, ast.FunctionDef):
             for call in decorator_calls(node):
@@ -113,7 +134,10 @@ def analyse(tree):
                 exprs.append((call.args[0].value, call.args[1].value))
         # quarantine views apply the same dicts via invalid_predicate(RULES)
         for n in ast.walk(node):
-            if isinstance(n, ast.Call) and dec_name(n) in ("invalid_predicate", "quarantine_reason"):
+            if isinstance(n, ast.Call) and dec_name(n) in (
+                "invalid_predicate",
+                "quarantine_reason",
+            ):
                 if n.args and isinstance(n.args[0], ast.Name):
                     exprs += list(rules.get(n.args[0].id, {}).items())
         if exprs:
@@ -136,10 +160,8 @@ for path in PATHS:
             missing = sql_identifiers(expr) - cols
             if missing:
                 bad += 1
-                print(f"FAIL {path}: {fn} [{rule_name}] -> "
-                      f"{sorted(missing)} not in {source}")
+                print(f"FAIL {path}: {fn} [{rule_name}] -> {sorted(missing)} not in {source}")
     print(f"  {path:38s} {len(checks):2d} dataset(s)")
 
-print(f"\n{total} datasets checked across {len(PATHS)} files, "
-      f"{bad} bad expectation(s)")
+print(f"\n{total} datasets checked across {len(PATHS)} files, {bad} bad expectation(s)")
 sys.exit(1 if bad else 0)

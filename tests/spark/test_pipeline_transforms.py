@@ -35,6 +35,7 @@ from pathlib import Path
 from pyspark.sql import Row, SparkSession
 from pyspark.sql import functions as F
 
+
 def _find_pipeline_dir() -> Path:
     """Locate src/pipeline without relying on `__file__`.
 
@@ -57,9 +58,7 @@ def _find_pipeline_dir() -> Path:
             found = directory / "src" / "pipeline"
             if found.is_dir():
                 return found
-    raise RuntimeError(
-        f"src/pipeline not found from any of {[str(c) for c in candidates]}"
-    )
+    raise RuntimeError(f"src/pipeline not found from any of {[str(c) for c in candidates]}")
 
 
 PIPELINE_DIR = _find_pipeline_dir()
@@ -117,6 +116,7 @@ def _stub_pipelines_module():
     def anything(*_args, **_kwargs):
         def decorate(fn):
             return fn
+
         return decorate
 
     def module_getattr(name):
@@ -129,10 +129,19 @@ def _stub_pipelines_module():
 
     mod.__getattr__ = module_getattr
     for name in (
-        "table", "materialized_view", "temporary_view", "view",
-        "expect", "expect_or_fail", "expect_or_drop",
-        "expect_all", "expect_all_or_drop", "expect_all_or_fail",
-        "create_streaming_table", "create_auto_cdc_flow", "append_flow",
+        "table",
+        "materialized_view",
+        "temporary_view",
+        "view",
+        "expect",
+        "expect_or_fail",
+        "expect_or_drop",
+        "expect_all",
+        "expect_all_or_drop",
+        "expect_all_or_fail",
+        "create_streaming_table",
+        "create_auto_cdc_flow",
+        "append_flow",
     ):
         setattr(mod, name, anything)
     return mod
@@ -155,6 +164,7 @@ def load(filename, spark):
 
 # ─────────────────────────────── the tests ───────────────────────────────
 
+
 def test_lap_time_parsing(spark, laps):
     """`1:27.623` is 87.623 seconds, and a NULL stays NULL.
 
@@ -163,21 +173,22 @@ def test_lap_time_parsing(spark, laps):
     which is why this is parsed rather than cast.
     """
     cases = [
-        ("1:27.623", 87.623),   # the ordinary case
-        ("0:59.812", 59.812),   # sub-minute, still colon-formatted
-        ("59.812", 59.812),     # no colon at all
-        ("2:03.500", 123.5),    # minutes carry correctly
+        ("1:27.623", 87.623),  # the ordinary case
+        ("0:59.812", 59.812),  # sub-minute, still colon-formatted
+        ("59.812", 59.812),  # no colon at all
+        ("2:03.500", 123.5),  # minutes carry correctly
         ("10:15.250", 615.25),  # red-flag lap, two-digit minutes
-        (None, None),           # absence survives as absence
+        (None, None),  # absence survives as absence
     ]
-    df = spark.createDataFrame(
-        [Row(lap_time_raw=raw) for raw, _ in cases]
-    ).withColumn("parsed", laps["LAP_SECONDS"])
+    df = spark.createDataFrame([Row(lap_time_raw=raw) for raw, _ in cases]).withColumn(
+        "parsed", laps["LAP_SECONDS"]
+    )
     got = [r["parsed"] for r in df.collect()]
     want = [expected for _, expected in cases]
     for raw_case, g, w in zip(cases, got, want):
-        assert (g is None and w is None) or abs(g - w) < 1e-6, \
+        assert (g is None and w is None) or abs(g - w) < 1e-6, (
             f"lap time {raw_case[0]!r} parsed as {g}, expected {w}"
+        )
 
 
 def test_pit_duration_parsing(spark, pits):
@@ -188,15 +199,14 @@ def test_pit_duration_parsing(spark, pits):
     random 4%, but precisely the stops where something unusual happened.
     """
     cases = [
-        ("21.789", 21.789, True),      # a normal stop, timed
-        ("2.100", 2.1, True),          # a drive-through, still service
+        ("21.789", 21.789, True),  # a normal stop, timed
+        ("2.100", 2.1, True),  # a drive-through, still service
         ("12:57.770", 777.77, False),  # red flag, not a service stop
         ("35:54.149", 2154.149, False),  # 35*60 + 54.149
         (None, None, None),
     ]
-    df = (
-        spark.createDataFrame([Row(duration_raw=raw) for raw, _, _ in cases])
-        .withColumn("duration_s", pits["DURATION_SECONDS"])
+    df = spark.createDataFrame([Row(duration_raw=raw) for raw, _, _ in cases]).withColumn(
+        "duration_s", pits["DURATION_SECONDS"]
     )
     df = df.withColumn(
         "is_service_stop",
@@ -204,11 +214,12 @@ def test_pit_duration_parsing(spark, pits):
     )
     for row, (raw, want_s, want_service) in zip(df.collect(), cases):
         got = row["duration_s"]
-        assert (got is None and want_s is None) or abs(got - want_s) < 1e-6, \
+        assert (got is None and want_s is None) or abs(got - want_s) < 1e-6, (
             f"duration {raw!r} parsed as {got}, expected {want_s}"
-        assert row["is_service_stop"] == want_service, \
-            f"duration {raw!r} service flag {row['is_service_stop']}, " \
-            f"expected {want_service}"
+        )
+        assert row["is_service_stop"] == want_service, (
+            f"duration {raw!r} service flag {row['is_service_stop']}, expected {want_service}"
+        )
 
 
 def test_laps_schema_survives_three_levels(spark, laps):
@@ -219,20 +230,47 @@ def test_laps_schema_survives_three_levels(spark, laps):
     levels parses without error and yields an empty array, so this asserts the
     row count after all three explodes rather than that parsing "worked".
     """
-    payload = json.dumps({
-        "MRData": {"RaceTable": {"Races": [{
-            "season": "2024", "round": "1",
-            "Laps": [
-                {"number": "1", "Timings": [
-                    {"driverId": "verstappen", "position": "1", "time": "1:33.421"},
-                    {"driverId": "leclerc", "position": "2", "time": "1:34.008"},
-                ]},
-                {"number": "2", "Timings": [
-                    {"driverId": "verstappen", "position": "1", "time": "1:32.100"},
-                ]},
-            ],
-        }]}}
-    })
+    payload = json.dumps(
+        {
+            "MRData": {
+                "RaceTable": {
+                    "Races": [
+                        {
+                            "season": "2024",
+                            "round": "1",
+                            "Laps": [
+                                {
+                                    "number": "1",
+                                    "Timings": [
+                                        {
+                                            "driverId": "verstappen",
+                                            "position": "1",
+                                            "time": "1:33.421",
+                                        },
+                                        {
+                                            "driverId": "leclerc",
+                                            "position": "2",
+                                            "time": "1:34.008",
+                                        },
+                                    ],
+                                },
+                                {
+                                    "number": "2",
+                                    "Timings": [
+                                        {
+                                            "driverId": "verstappen",
+                                            "position": "1",
+                                            "time": "1:32.100",
+                                        },
+                                    ],
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+        }
+    )
     df = (
         spark.createDataFrame([Row(raw_payload=json.dumps({"payload": json.loads(payload)}))])
         .withColumn("parsed", F.from_json("raw_payload", laps["LAPS_SCHEMA"]))
@@ -240,8 +278,9 @@ def test_laps_schema_survives_three_levels(spark, laps):
         .select(F.explode("race.Laps").alias("lap_rec"))
         .select(F.explode("lap_rec.Timings").alias("t"))
     )
-    assert df.count() == 3, \
+    assert df.count() == 3, (
         f"three timings across two laps should explode to 3 rows, got {df.count()}"
+    )
     assert df.select("t.driverId").first()["driverId"] == "verstappen"
 
 
@@ -257,8 +296,9 @@ def test_expectation_rules_reference_real_columns(laps, pits):
     assert pits["PIT_STOP_RULES"], "PIT_STOP_RULES is empty"
     joined = " ".join(laps["LAP_RULES"].values())
     assert "lap_time_s" in joined, "no rule guards the parsed lap time"
-    assert "duration_s" in " ".join(pits["PIT_STOP_RULES"].values()), \
+    assert "duration_s" in " ".join(pits["PIT_STOP_RULES"].values()), (
         "no rule guards the parsed stop duration"
+    )
 
 
 def test_wet_threshold_matches_ingestion_config(weather):
@@ -271,8 +311,7 @@ def test_wet_threshold_matches_ingestion_config(weather):
     import config  # noqa: PLC0415  — path is only valid once inserted above
 
     assert weather["WET_THRESHOLD_MM"] == config.WET_THRESHOLD_MM, (
-        f"Silver says {weather['WET_THRESHOLD_MM']} mm, "
-        f"config says {config.WET_THRESHOLD_MM} mm"
+        f"Silver says {weather['WET_THRESHOLD_MM']} mm, config says {config.WET_THRESHOLD_MM} mm"
     )
 
 
@@ -314,4 +353,6 @@ def main() -> int:
 if __name__ == "__main__":
     _failures = main()
     if _failures:
-        raise SystemExit(f"{_failures} pipeline unit test(s) failed — see the PASS/FAIL lines above")
+        raise SystemExit(
+            f"{_failures} pipeline unit test(s) failed — see the PASS/FAIL lines above"
+        )

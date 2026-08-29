@@ -8,14 +8,13 @@ exception — no partial results, no silent truncation.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import urllib.error
 import urllib.request
-import json
-from typing import Any
-
 from collections import deque
+from typing import Any
 
 from config import (
     BACKOFF_BASE_SECONDS,
@@ -52,8 +51,9 @@ class RateBudget:
     without a test that actually waits an hour.
     """
 
-    def __init__(self, per_second: float, per_hour: int,
-                 clock=time.monotonic, sleeper=time.sleep) -> None:
+    def __init__(
+        self, per_second: float, per_hour: int, clock=time.monotonic, sleeper=time.sleep
+    ) -> None:
         self._min_interval = 1.0 / per_second
         self._per_hour = per_hour
         self._clock = clock
@@ -79,7 +79,10 @@ class RateBudget:
             if wait > 0:
                 log.warning(
                     "hourly budget of %s reached — pausing %.0fs. This is the "
-                    "sustained limit, not an error.", self._per_hour, wait)
+                    "sustained limit, not an error.",
+                    self._per_hour,
+                    wait,
+                )
                 self._sleep(wait)
                 now = self._clock()
                 self._drop_expired(now)

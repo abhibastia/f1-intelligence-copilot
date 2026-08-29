@@ -79,11 +79,9 @@ def access_model(
         # Traversal only. Seeing that the catalog exists is not reading
         # anything in it.
         ("catalog", catalog, {CONSUMERS: ["USE_CATALOG"]}),
-
         # The marts are the product: the one layer a consumer reads, and the
         # only one the dashboard needs.
         ("schema", f"{catalog}.gold", {CONSUMERS: ["USE_SCHEMA", "SELECT"]}),
-
         # The metric view is the semantic layer over those marts. The schema
         # grant already covers it; naming it explicitly is what makes the
         # governed metric definitions visible in the access model rather than
@@ -101,12 +99,9 @@ def access_model(
         # pre-join facts; reading them without the marts' as-of joins is how
         # someone quietly reports a driver's points against the wrong team.
         ("schema", f"{catalog}.silver", {engineers: ["USE_SCHEMA", "SELECT"]}),
-
         # Debugging only. Bronze is raw payloads with no types.
         ("schema", f"{catalog}.bronze", {engineers: ["USE_SCHEMA", "SELECT"]}),
-
         ("schema", f"{catalog}.raw", {engineers: ["USE_SCHEMA"]}),
-
         # READ_VOLUME, never WRITE_VOLUME: the landing zone has exactly one
         # writer, the ingestion job. A second writer breaks the idempotency
         # contract that lets Silver deduplicate on the newest _ingest_ts.
@@ -118,7 +113,8 @@ def access_model(
 def cli(args: list[str], profile: str) -> dict:
     result = subprocess.run(
         ["databricks", *args, "--profile", profile, "-o", "json"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
@@ -128,8 +124,7 @@ def cli(args: list[str], profile: str) -> dict:
 def current(securable: str, name: str, profile: str) -> dict[str, set[str]]:
     got = cli(["grants", "get", securable, name], profile)
     return {
-        a["principal"]: set(a.get("privileges", []))
-        for a in got.get("privilege_assignments", [])
+        a["principal"]: set(a.get("privileges", [])) for a in got.get("privilege_assignments", [])
     }
 
 
@@ -140,14 +135,12 @@ def main() -> int:
     parser.add_argument(
         "--engineers",
         help="Account-level group or user email granted Silver, Bronze and the "
-             "landing Volume. Workspace-local groups are rejected by Unity "
-             "Catalog. Omit on a single-user workspace: those layers then stay "
-             "owner-only, which is the right answer there.",
+        "landing Volume. Workspace-local groups are rejected by Unity "
+        "Catalog. Omit on a single-user workspace: those layers then stay "
+        "owner-only, which is the right answer there.",
     )
-    parser.add_argument("--dry-run", action="store_true",
-                        help="print what would change and exit")
-    parser.add_argument("--show", action="store_true",
-                        help="print effective grants and exit")
+    parser.add_argument("--dry-run", action="store_true", help="print what would change and exit")
+    parser.add_argument("--show", action="store_true", help="print effective grants and exit")
     args = parser.parse_args()
 
     model = access_model(args.catalog, args.engineers)
@@ -183,8 +176,10 @@ def main() -> int:
             changed += 1
             continue
 
-        cli(["grants", "update", securable, name,
-             "--json", json.dumps({"changes": changes})], args.profile)
+        cli(
+            ["grants", "update", securable, name, "--json", json.dumps({"changes": changes})],
+            args.profile,
+        )
         print(f"  SET   {securable} {name}: {summary}")
         changed += 1
 

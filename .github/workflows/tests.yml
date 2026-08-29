@@ -19,6 +19,9 @@ jobs:
 
       - run: pip install -r requirements-dev.txt
 
+      - run: ruff check .
+      - run: ruff format --check .
+
       # No Databricks credentials exist here, by design - this is a public
       # runner. Nothing special needs to happen for that: every test that
       # needs Lakebase is `integration`-marked and skips cleanly through the

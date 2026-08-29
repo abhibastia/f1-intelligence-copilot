@@ -5,6 +5,7 @@ the resolver with the strings a developer types - they only appeared when a
 language model chose the arguments, saying "Monza" and "Sao Paulo" where the
 data says "Italian Grand Prix" and "São Paulo".
 """
+
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -13,17 +14,21 @@ pytestmark = pytest.mark.integration
 @pytest.fixture(scope="module")
 def broker(lakebase):
     import f1_broker
+
     return f1_broker
 
 
 class TestRaceResolution:
-    @pytest.mark.parametrize("query,expected_round", [
-        ("16", 16),                    # round number
-        ("Italian", 16),               # race name
-        ("Monza", 16),                 # CIRCUIT name - the agent's first guess
-        ("Silverstone", 12),
-        ("Interlagos", 21),
-    ])
+    @pytest.mark.parametrize(
+        "query,expected_round",
+        [
+            ("16", 16),  # round number
+            ("Italian", 16),  # race name
+            ("Monza", 16),  # CIRCUIT name - the agent's first guess
+            ("Silverstone", 12),
+            ("Interlagos", 21),
+        ],
+    )
     def test_resolves_by_round_name_or_circuit(self, broker, query, expected_round):
         assert broker.resolve_race(2024, query)["round"] == expected_round
 
@@ -43,13 +48,16 @@ class TestRaceResolution:
 
 
 class TestDriverResolution:
-    @pytest.mark.parametrize("query,expected", [
-        ("Verstappen", "Max Verstappen"),
-        ("max_verstappen", "Max Verstappen"),
-        ("VER", "Max Verstappen"),
-        ("Perez", "Sergio Pérez"),          # accent folding
-        ("Hulkenberg", "Nico Hülkenberg"),  # umlaut folding
-    ])
+    @pytest.mark.parametrize(
+        "query,expected",
+        [
+            ("Verstappen", "Max Verstappen"),
+            ("max_verstappen", "Max Verstappen"),
+            ("VER", "Max Verstappen"),
+            ("Perez", "Sergio Pérez"),  # accent folding
+            ("Hulkenberg", "Nico Hülkenberg"),  # umlaut folding
+        ],
+    )
     def test_resolves_by_name_id_code_or_unaccented(self, broker, query, expected):
         assert broker.resolve_driver(query, 2024)["driver_name"] == expected
 
@@ -87,9 +95,9 @@ class TestRetrievalFloor:
 
 class TestWeatherHonesty:
     def test_missing_observation_is_not_reported_as_dry(self, broker):
-        """"No data" and "no rain" are different claims. A future race has no
+        """ "No data" and "no rain" are different claims. A future race has no
         observation, and saying it was fair weather would be a lie."""
-        result = broker.race_weather(2026, 23)   # Abu Dhabi, not yet run
+        result = broker.race_weather(2026, 23)  # Abu Dhabi, not yet run
         assert result.get("weather_available") is False
         assert "no data" in result.get("note", "").lower()
 

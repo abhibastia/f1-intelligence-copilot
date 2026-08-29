@@ -17,7 +17,9 @@ existed. `main()` below assumes pit stops are already in Lakebase; run
 `python -m f1lake.seed_gold` first if they are not.
 """
 
-import argparse, logging
+import argparse
+import logging
+
 from f1lake import schema
 from f1lake.schema import execute_values
 
@@ -60,10 +62,12 @@ def build_stints() -> int:
     stops = schema.query(f"""
         SELECT season, round, driver_id, stop_number, lap
         FROM {schema.PIT_STOPS} ORDER BY season, round, driver_id, stop_number""")
-    finished = {(r["season"], r["round"], r["driver_id"]): r["laps_completed"]
-                for r in schema.query("""
+    finished = {
+        (r["season"], r["round"], r["driver_id"]): r["laps_completed"]
+        for r in schema.query("""
                     SELECT season, round, driver_id, laps_completed
-                    FROM f1_driver_performance WHERE laps_completed IS NOT NULL""")}
+                    FROM f1_driver_performance WHERE laps_completed IS NOT NULL""")
+    }
 
     by_driver: dict = {}
     for s in stops:
@@ -77,13 +81,23 @@ def build_stints() -> int:
             total = int(float(total)) if total is not None else None
         except (TypeError, ValueError):
             total = None
-        boundaries = [1] + [l + 1 for l in laps]
+        boundaries = [1] + [lap + 1 for lap in laps]
         ends = laps + [total]
         for i, (start, end) in enumerate(zip(boundaries, ends), start=1):
             length = (end - start + 1) if (end is not None and end >= start) else None
-            rows.append((season, rnd, driver, i, start, end, length,
-                         "race start" if i == 1 else f"pit stop {i-1}",
-                         "race end" if i == len(boundaries) else f"pit stop {i}"))
+            rows.append(
+                (
+                    season,
+                    rnd,
+                    driver,
+                    i,
+                    start,
+                    end,
+                    length,
+                    "race start" if i == 1 else f"pit stop {i - 1}",
+                    "race end" if i == len(boundaries) else f"pit stop {i}",
+                )
+            )
     if not rows:
         return 0
     sql = f"""INSERT INTO {schema.STINTS}
@@ -108,7 +122,9 @@ def main():
     logger.info("stints derived: %d", build_stints())
     t = schema.query(f"""SELECT (SELECT count(*) FROM {schema.PIT_STOPS}) stops,
                                 (SELECT count(*) FROM {schema.STINTS}) stints,
-                                (SELECT count(DISTINCT (season,round)) FROM {schema.PIT_STOPS}) races""")[0]
+                                (SELECT count(DISTINCT (season,round)) FROM {schema.PIT_STOPS}) races""")[
+        0
+    ]
     logger.info("totals: %(stops)d stops, %(stints)d stints across %(races)d races", t)
 
 

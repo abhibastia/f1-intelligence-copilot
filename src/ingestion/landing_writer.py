@@ -80,7 +80,7 @@ def write_payload(
     The envelope is what makes Bronze auditable and Silver's dedupe possible —
     storing bare MRData would leave no ingestion timestamp to order snapshots by.
     """
-    ingest_ts = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    ingest_ts = dt.datetime.now(dt.UTC).replace(microsecond=0)
     envelope = {
         "_ingest_ts": ingest_ts.isoformat().replace("+00:00", "Z"),
         "_source_url": source_url,

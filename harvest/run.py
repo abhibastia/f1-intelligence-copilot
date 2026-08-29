@@ -10,10 +10,17 @@ removed that duplication: `f1lake.seed_gold` now seeds Lakebase's
 Spark-side equivalent, so it stays the one thing this module still does.
 """
 
-import argparse, datetime, json, logging, os, sys
+import argparse
+import datetime
+import json
+import logging
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harvest import races as races_mod, wikipedia as wiki_mod
+from harvest import races as races_mod
+from harvest import wikipedia as wiki_mod
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("harvest")
@@ -31,12 +38,17 @@ def main() -> None:
     today = datetime.date.today().isoformat()
     run = races_mod.completed_races(all_races, today)
     if args.limit:
-        run = run[:args.limit]
+        run = run[: args.limit]
 
-    log.info("Races known: %d  |  already run: %d  |  harvesting: %d",
-             len(all_races), len(races_mod.completed_races(all_races, today)), len(run))
-    json.dump([r.to_dict() for r in all_races],
-              open(os.path.join(args.out, "races.json"), "w"), indent=2)
+    log.info(
+        "Races known: %d  |  already run: %d  |  harvesting: %d",
+        len(all_races),
+        len(races_mod.completed_races(all_races, today)),
+        len(run),
+    )
+    json.dump(
+        [r.to_dict() for r in all_races], open(os.path.join(args.out, "races.json"), "w"), indent=2
+    )
 
     if not args.skip_wikipedia:
         log.info("\n--- Wikipedia race reports ---")
@@ -53,11 +65,16 @@ def main() -> None:
         reports = existing + fetched
         reports.sort(key=lambda r: (r["season"], r["round"]))
         json.dump(reports, open(os.path.join(args.out, "race_reports.json"), "w"), indent=2)
-        json.dump(failures, open(os.path.join(args.out, "race_reports_failures.json"), "w"), indent=2)
-        log.info("reports=%d failures=%d sections=%d chars=%d",
-                 len(reports), len(failures),
-                 sum(len(r["sections"]) for r in reports),
-                 sum(r["total_chars"] for r in reports))
+        json.dump(
+            failures, open(os.path.join(args.out, "race_reports_failures.json"), "w"), indent=2
+        )
+        log.info(
+            "reports=%d failures=%d sections=%d chars=%d",
+            len(reports),
+            len(failures),
+            sum(len(r["sections"]) for r in reports),
+            sum(r["total_chars"] for r in reports),
+        )
 
 
 if __name__ == "__main__":

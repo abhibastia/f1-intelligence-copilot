@@ -140,11 +140,7 @@ def stg_weather():
     window = Window.partitionBy("season", "round").orderBy(
         F.col("_ingest_ts").desc(), F.col("_file_path").desc()
     )
-    return (
-        df.withColumn("_rn", F.row_number().over(window))
-        .filter(F.col("_rn") == 1)
-        .drop("_rn")
-    )
+    return df.withColumn("_rn", F.row_number().over(window)).filter(F.col("_rn") == 1).drop("_rn")
 
 
 @dp.materialized_view(

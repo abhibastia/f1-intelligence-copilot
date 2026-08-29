@@ -31,7 +31,11 @@ still fetches.
 __file__ is not bound under a serverless spark_python_task (the file is run
 through exec), so the repo root is located without it.
 """
-import datetime, logging, os, sys
+
+import datetime
+import logging
+import os
+import sys
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("harvest-job")
@@ -42,8 +46,10 @@ sys.path.insert(0, ROOT)
 
 os.environ.setdefault("F1_LANDING_DIR", "/Volumes/f1/raw/landing")
 
-from harvest import races as R, wikipedia as WK
-from f1lake import schema, load as L
+from f1lake import load as L
+from f1lake import schema
+from harvest import races as R
+from harvest import wikipedia as WK
 
 schema.ensure_schema()
 
@@ -51,8 +57,13 @@ all_races = R.load_races()
 run = R.completed_races(all_races, datetime.date.today().isoformat())
 have = L.harvested_races()
 todo = [r for r in run if (r.season, r.round) not in have]
-log.info("races known=%d, already run=%d, already harvested=%d, fetching=%d",
-         len(all_races), len(run), len(have), len(todo))
+log.info(
+    "races known=%d, already run=%d, already harvested=%d, fetching=%d",
+    len(all_races),
+    len(run),
+    len(have),
+    len(todo),
+)
 
 stats = WK.fetch_and_store(todo, store=lambda report: L.load_documents([report]))
 log.info("race reports: %d stored, %d failed", stats["fetched"], stats["failed"])

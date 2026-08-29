@@ -104,6 +104,7 @@ CONSTRUCTOR_STANDINGS_SCHEMA = (
 
 # ─────────────────────────── shared helpers ─────────────────────────────
 
+
 def parse(table: str, schema: str, path: str):
     """Read a Bronze table and explode one payload array into rows."""
     return (
@@ -122,11 +123,7 @@ def dedupe(df, keys: list[str]):
     window = Window.partitionBy(*keys).orderBy(
         F.col("_ingest_ts").desc(), F.col("_file_path").desc()
     )
-    return (
-        df.withColumn("_rn", F.row_number().over(window))
-        .filter(F.col("_rn") == 1)
-        .drop("_rn")
-    )
+    return df.withColumn("_rn", F.row_number().over(window)).filter(F.col("_rn") == 1).drop("_rn")
 
 
 def quarantine_reason(rules: dict[str, str]):
@@ -146,9 +143,11 @@ def lap_time_millis(column: str):
     parts = F.split(F.col(column), ":")
     seconds_only = parts.getItem(0).cast("double")
     minutes = parts.getItem(0).cast("double") * 60 + parts.getItem(1).cast("double")
-    return F.when(F.col(column).isNull() | (F.col(column) == ""), None).otherwise(
-        F.when(F.size(parts) == 2, minutes).otherwise(seconds_only) * 1000
-    ).cast("long")
+    return (
+        F.when(F.col(column).isNull() | (F.col(column) == ""), None)
+        .otherwise(F.when(F.size(parts) == 2, minutes).otherwise(seconds_only) * 1000)
+        .cast("long")
+    )
 
 
 # ────────────────────────────── dim_race ────────────────────────────────
@@ -221,9 +220,7 @@ RESULT_RULES = {
 
 @dp.temporary_view(name="stg_result")
 def stg_result():
-    races = parse(
-        f"{BRONZE}.raw_results", RESULTS_SCHEMA, "parsed.payload.MRData.RaceTable.Races"
-    )
+    races = parse(f"{BRONZE}.raw_results", RESULTS_SCHEMA, "parsed.payload.MRData.RaceTable.Races")
     df = races.select(
         F.col("item.season").cast("int").alias("season"),
         F.col("item.round").cast("int").alias("round"),
@@ -268,17 +265,21 @@ def stg_result():
 
     # `positionText` carries the classification: a number when classified, or
     # R/D/E/W/F/N when not. Anything non-numeric means the driver did not finish.
-    df = df.withColumn(
-        "dnf_flag", F.when(F.col("position_text").rlike("^[0-9]+$"), False).otherwise(True)
-    ).withColumn(
-        "positions_gained",
-        F.when(
-            F.col("grid_position").isNotNull()
-            & F.col("position").isNotNull()
-            & (F.col("grid_position") > 0),
-            F.col("grid_position") - F.col("position"),
-        ),
-    ).withColumn("is_fastest_lap", F.col("fastest_lap_rank") == 1)
+    df = (
+        df.withColumn(
+            "dnf_flag", F.when(F.col("position_text").rlike("^[0-9]+$"), False).otherwise(True)
+        )
+        .withColumn(
+            "positions_gained",
+            F.when(
+                F.col("grid_position").isNotNull()
+                & F.col("position").isNotNull()
+                & (F.col("grid_position") > 0),
+                F.col("grid_position") - F.col("position"),
+            ),
+        )
+        .withColumn("is_fastest_lap", F.col("fastest_lap_rank") == 1)
+    )
 
     return dedupe(df, ["season", "round", "driver_id"])
 
@@ -291,12 +292,14 @@ def stg_result():
 )
 @dp.expect_all_or_drop(RESULT_RULES)
 @dp.expect_or_fail("plausible_season", "season BETWEEN 1950 AND 2100")
-@dp.expect_all({
-    "non_negative_points": "points >= 0",
-    "plausible_grid": "grid_position IS NULL OR grid_position BETWEEN 0 AND 30",
-    "plausible_position": "position IS NULL OR position BETWEEN 1 AND 30",
-    "laps_non_negative": "laps_completed >= 0",
-})
+@dp.expect_all(
+    {
+        "non_negative_points": "points >= 0",
+        "plausible_grid": "grid_position IS NULL OR grid_position BETWEEN 0 AND 30",
+        "plausible_position": "position IS NULL OR position BETWEEN 1 AND 30",
+        "laps_non_negative": "laps_completed >= 0",
+    }
+)
 def fact_result():
     return spark.read.table("stg_result")
 
@@ -331,9 +334,7 @@ SPRINT_RULES = {
 
 @dp.temporary_view(name="stg_sprint_result")
 def stg_sprint_result():
-    races = parse(
-        f"{BRONZE}.raw_sprint", SPRINT_SCHEMA, "parsed.payload.MRData.RaceTable.Races"
-    )
+    races = parse(f"{BRONZE}.raw_sprint", SPRINT_SCHEMA, "parsed.payload.MRData.RaceTable.Races")
     df = races.select(
         F.col("item.season").cast("int").alias("season"),
         F.col("item.round").cast("int").alias("round"),
@@ -396,9 +397,7 @@ QUALI_RULES = {
 
 @dp.temporary_view(name="stg_qualifying")
 def stg_qualifying():
-    races = parse(
-        f"{BRONZE}.raw_qualifying", QUALI_SCHEMA, "parsed.payload.MRData.RaceTable.Races"
-    )
+    races = parse(f"{BRONZE}.raw_qualifying", QUALI_SCHEMA, "parsed.payload.MRData.RaceTable.Races")
     df = races.select(
         F.col("item.season").cast("int").alias("season"),
         F.col("item.round").cast("int").alias("round"),
@@ -443,10 +442,12 @@ def stg_qualifying():
     table_properties={"quality": "silver"},
 )
 @dp.expect_all_or_drop(QUALI_RULES)
-@dp.expect_all({
-    "plausible_quali_position": "quali_position BETWEEN 1 AND 30",
-    "q1_before_q3": "q1_millis IS NULL OR q3_millis IS NULL OR q3_millis <= q1_millis",
-})
+@dp.expect_all(
+    {
+        "plausible_quali_position": "quali_position BETWEEN 1 AND 30",
+        "q1_before_q3": "q1_millis IS NULL OR q3_millis IS NULL OR q3_millis <= q1_millis",
+    }
+)
 def fact_qualifying():
     return spark.read.table("stg_qualifying")
 
@@ -515,10 +516,12 @@ def stg_driver_standing():
     table_properties={"quality": "silver"},
 )
 @dp.expect_all_or_drop(DRIVER_STANDING_RULES)
-@dp.expect_all({
-    "non_negative_points": "cumulative_points >= 0",
-    "non_negative_wins": "cumulative_wins >= 0",
-})
+@dp.expect_all(
+    {
+        "non_negative_points": "cumulative_points >= 0",
+        "non_negative_wins": "cumulative_wins >= 0",
+    }
+)
 def fact_driver_standing():
     return spark.read.table("stg_driver_standing")
 
@@ -583,10 +586,12 @@ def stg_constructor_standing():
     table_properties={"quality": "silver"},
 )
 @dp.expect_all_or_drop(CONSTRUCTOR_STANDING_RULES)
-@dp.expect_all({
-    "non_negative_points": "cumulative_points >= 0",
-    "non_negative_wins": "cumulative_wins >= 0",
-})
+@dp.expect_all(
+    {
+        "non_negative_points": "cumulative_points >= 0",
+        "non_negative_wins": "cumulative_wins >= 0",
+    }
+)
 def fact_constructor_standing():
     return spark.read.table("stg_constructor_standing")
 

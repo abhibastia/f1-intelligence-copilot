@@ -332,6 +332,10 @@ Tests marked `integration` open a real Lakebase connection and clean up every
 row they write. `tests/spark/` needs a real Spark session and runs on
 Databricks as the first task of `f1_end_to_end`, not locally.
 
+Lint/format is `ruff` (config in `pyproject.toml`). `pip install -r
+requirements-dev.txt && pre-commit install` runs it on every commit; CI runs
+the same check.
+
 ### Step 8 — Access control and one-command refresh
 
 ```bash

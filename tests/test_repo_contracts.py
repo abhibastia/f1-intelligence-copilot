@@ -31,8 +31,7 @@ FORBIDDEN = {
     r"\bdlt\.": "use the `dp.` namespace",
     r"\bapply_changes\s*\(": "use `dp.create_auto_cdc_flow`",
     r"\bLIVE\.": "the LIVE. prefix errors in modern pipelines",
-    r"CREATE OR REPLACE\s+(STREAMING TABLE|MATERIALIZED VIEW)":
-        "use CREATE OR REFRESH for pipeline datasets",
+    r"CREATE OR REPLACE\s+(STREAMING TABLE|MATERIALIZED VIEW)": "use CREATE OR REFRESH for pipeline datasets",
 }
 
 
@@ -102,16 +101,16 @@ def test_scheduled_job_validates_its_output():
             if "schedule" not in job:
                 continue
             task_keys = {t["task_key"] for t in job["tasks"]}
-            assert "validate" in task_keys, (
-                f"{name} is scheduled but never validates its marts"
-            )
+            assert "validate" in task_keys, f"{name} is scheduled but never validates its marts"
 
 
 def test_expectation_columns_resolve():
     """Delegates to the pre-flight checker, which walks every Silver file."""
     result = subprocess.run(
         [sys.executable, "scripts/check_expectations.py"],
-        cwd=ROOT, capture_output=True, text=True,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -124,8 +123,7 @@ def test_every_document_is_reachable_from_the_readme():
     had to browse docs/ to find it, which is the same as it not existing.
     """
     readme = (ROOT / "README.md").read_text()
-    unlinked = [p.name for p in sorted((ROOT / "docs").glob("*.md"))
-                if p.name not in readme]
+    unlinked = [p.name for p in sorted((ROOT / "docs").glob("*.md")) if p.name not in readme]
     assert not unlinked, (
         f"documents not linked from the README: {unlinked}. "
         f"Add them to the Layout table, or delete them."
@@ -138,8 +136,9 @@ def test_no_document_claims_the_wrong_dashboard_page_count():
     Counts written in prose drift silently, and the demo script is the one
     document somebody reads aloud under pressure.
     """
-    pages = len(json.loads(
-        (ROOT / "dashboards" / "f1_race_intelligence.lvdash.json").read_text())["pages"])
+    pages = len(
+        json.loads((ROOT / "dashboards" / "f1_race_intelligence.lvdash.json").read_text())["pages"]
+    )
     words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"}
     for doc in sorted((ROOT / "docs").glob("*.md")) + [ROOT / "README.md"]:
         text = doc.read_text()
@@ -148,10 +147,12 @@ def test_no_document_claims_the_wrong_dashboard_page_count():
                 continue
             for claim in (f"{word} decision pages", f"{n} decision pages"):
                 assert claim not in text, (
-                    f"{doc.name} claims {claim!r} but the dashboard has {pages}")
+                    f"{doc.name} claims {claim!r} but the dashboard has {pages}"
+                )
 
 
 # ─────────────────────────────── dashboards ──────────────────────────────
+
 
 def _widgets(dashboard):
     for page in dashboard.get("pages", []):
@@ -163,10 +164,17 @@ def _widgets(dashboard):
 # error: the tile draws "Visualization has no fields selected", which reads
 # like a field mismatch and is not one.
 WIDGET_VERSIONS = {
-    "counter": 2, "table": 2, "bar": 3, "line": 3,
-    "pie": 3, "scatter": 3, "area": 3,
-    "filter-single-select": 2, "filter-multi-select": 2,
-    "filter-date-range-picker": 2, "symbol-map": 2,
+    "counter": 2,
+    "table": 2,
+    "bar": 3,
+    "line": 3,
+    "pie": 3,
+    "scatter": 3,
+    "area": 3,
+    "filter-single-select": 2,
+    "filter-multi-select": 2,
+    "filter-date-range-picker": 2,
+    "symbol-map": 2,
 }
 
 
@@ -240,8 +248,7 @@ def test_widget_fields_match_encodings(path):
         collect(spec["encodings"])
         missing = sorted(set(referenced) - available)
         assert not missing, (
-            f"{path.name}: {widget['name']} encodes {missing}, "
-            f"which its query does not select"
+            f"{path.name}: {widget['name']} encodes {missing}, which its query does not select"
         )
 
 
@@ -267,20 +274,39 @@ def test_dataset_queries_use_bare_table_names(path):
 # __init__}.py go into both app/ and mcp_server/; f1_broker.py's canonical
 # home is mcp_server/, copied into app/ only.
 GENERATED_COPIES = [
-    pytest.param(ROOT / "f1lake" / "__init__.py", ROOT / "app" / "f1lake" / "__init__.py",
-                 id="app/f1lake/__init__.py"),
-    pytest.param(ROOT / "f1lake" / "schema.py", ROOT / "app" / "f1lake" / "schema.py",
-                 id="app/f1lake/schema.py"),
-    pytest.param(ROOT / "f1lake" / "embedder.py", ROOT / "app" / "f1lake" / "embedder.py",
-                 id="app/f1lake/embedder.py"),
-    pytest.param(ROOT / "f1lake" / "__init__.py", ROOT / "mcp_server" / "f1lake" / "__init__.py",
-                 id="mcp_server/f1lake/__init__.py"),
-    pytest.param(ROOT / "f1lake" / "schema.py", ROOT / "mcp_server" / "f1lake" / "schema.py",
-                 id="mcp_server/f1lake/schema.py"),
-    pytest.param(ROOT / "f1lake" / "embedder.py", ROOT / "mcp_server" / "f1lake" / "embedder.py",
-                 id="mcp_server/f1lake/embedder.py"),
-    pytest.param(ROOT / "mcp_server" / "f1_broker.py", ROOT / "app" / "f1_broker.py",
-                 id="app/f1_broker.py"),
+    pytest.param(
+        ROOT / "f1lake" / "__init__.py",
+        ROOT / "app" / "f1lake" / "__init__.py",
+        id="app/f1lake/__init__.py",
+    ),
+    pytest.param(
+        ROOT / "f1lake" / "schema.py",
+        ROOT / "app" / "f1lake" / "schema.py",
+        id="app/f1lake/schema.py",
+    ),
+    pytest.param(
+        ROOT / "f1lake" / "embedder.py",
+        ROOT / "app" / "f1lake" / "embedder.py",
+        id="app/f1lake/embedder.py",
+    ),
+    pytest.param(
+        ROOT / "f1lake" / "__init__.py",
+        ROOT / "mcp_server" / "f1lake" / "__init__.py",
+        id="mcp_server/f1lake/__init__.py",
+    ),
+    pytest.param(
+        ROOT / "f1lake" / "schema.py",
+        ROOT / "mcp_server" / "f1lake" / "schema.py",
+        id="mcp_server/f1lake/schema.py",
+    ),
+    pytest.param(
+        ROOT / "f1lake" / "embedder.py",
+        ROOT / "mcp_server" / "f1lake" / "embedder.py",
+        id="mcp_server/f1lake/embedder.py",
+    ),
+    pytest.param(
+        ROOT / "mcp_server" / "f1_broker.py", ROOT / "app" / "f1_broker.py", id="app/f1_broker.py"
+    ),
 ]
 
 
@@ -302,11 +328,14 @@ def test_generated_app_payload_matches_its_source(canonical, generated):
 
 # ──────────────────────────────── bundle ─────────────────────────────────
 
+
 def test_bundle_pins_no_workspace_or_profile():
     """A pinned host or profile makes the bundle undeployable by anyone else."""
     bundle = (ROOT / "databricks.yml").read_text()
     targets = bundle.split("targets:", 1)[1]
-    assert not re.search(r"^\s+profile:", targets, re.M), \
+    assert not re.search(r"^\s+profile:", targets, re.M), (
         "databricks.yml pins a CLI profile — pass --profile instead"
-    assert not re.search(r"^\s+host:", targets, re.M), \
+    )
+    assert not re.search(r"^\s+host:", targets, re.M), (
         "databricks.yml pins a workspace host — it comes from the profile"
+    )

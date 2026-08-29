@@ -36,6 +36,7 @@ HEX32 = re.compile(r"^[0-9a-f]{32}$")
 
 # ─────────────────────────────── scope ───────────────────────────────
 
+
 @pytest.mark.parametrize("identifier", TABLES)
 def test_agent_reads_gold_only(identifier):
     assert identifier.startswith("f1.gold."), (
@@ -63,8 +64,12 @@ def test_metric_view_measures_are_wrapped():
         sql = "".join(entry["sql"])
         if "driver_metrics" not in sql:
             continue
-        assert "MEASURE(" in sql, f"certified SQL {entry['id']} reads the metric view without MEASURE()"
-        assert "SELECT *" not in sql.upper(), f"certified SQL {entry['id']} uses SELECT * on a metric view"
+        assert "MEASURE(" in sql, (
+            f"certified SQL {entry['id']} reads the metric view without MEASURE()"
+        )
+        assert "SELECT *" not in sql.upper(), (
+            f"certified SQL {entry['id']} uses SELECT * on a metric view"
+        )
 
 
 def test_certified_sql_stays_inside_gold():
@@ -72,7 +77,7 @@ def test_certified_sql_stays_inside_gold():
         sql = "".join(entry["sql"])
         for match in re.findall(r"\bFROM\s+([\w.]+)|\bJOIN\s+([\w.]+)", sql):
             table = match[0] or match[1]
-            if "." not in table:          # a CTE alias, not a table
+            if "." not in table:  # a CTE alias, not a table
                 continue
             assert table.startswith("f1.gold."), (
                 f"certified SQL {entry['id']} reads {table}, outside Gold"
@@ -94,6 +99,7 @@ def test_every_mart_is_reachable():
 
 
 # ─────────────────────────────── shape ───────────────────────────────
+
 
 def test_ids_are_hex32_and_globally_unique():
     ids = [item["id"] for item in (*SAMPLES, *SQLS, *INSTRUCTIONS)]
@@ -125,6 +131,7 @@ def test_sort_order_the_api_requires():
 
 
 # ──────────────────────────── domain rules ────────────────────────────
+
 
 def test_instructions_carry_the_rules_that_change_answers():
     """The traps found building this must survive an edit to the instructions."""

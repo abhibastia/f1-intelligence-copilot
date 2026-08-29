@@ -5,6 +5,7 @@ requests against a 500/hour ceiling, so a `should_write` that wrongly returns
 True re-fetches data already on disk and spends an hour of rate limit that
 cannot be recovered the same day.
 """
+
 import datetime as dt
 import os
 
@@ -54,21 +55,18 @@ class TestShouldWrite:
     def test_skips_a_closed_round_that_already_landed(self, tmp_path):
         """The whole point: a re-run must not re-fetch a finished race."""
         self._land(tmp_path, "results", 2024, 1)
-        assert not lw.should_write(
-            str(tmp_path), "results", 2024, 1, dt.date(2024, 3, 2))
+        assert not lw.should_write(str(tmp_path), "results", 2024, 1, dt.date(2024, 3, 2))
 
     def test_repulls_an_open_round_that_already_landed(self, tmp_path):
         self._land(tmp_path, "results", 2026, 12)
-        assert lw.should_write(
-            str(tmp_path), "results", 2026, 12, dt.date.today())
+        assert lw.should_write(str(tmp_path), "results", 2026, 12, dt.date.today())
 
     def test_a_directory_with_no_json_counts_as_empty(self, tmp_path):
         directory = lw.partition_dir(str(tmp_path), "results", 2024, 1)
         os.makedirs(directory)
         with open(os.path.join(directory, "_committed"), "w") as fh:
             fh.write("")
-        assert lw.should_write(
-            str(tmp_path), "results", 2024, 1, dt.date(2024, 3, 2))
+        assert lw.should_write(str(tmp_path), "results", 2024, 1, dt.date(2024, 3, 2))
 
 
 class TestWritePayload:
@@ -78,17 +76,26 @@ class TestWritePayload:
         import json
 
         path = lw.write_payload(
-            str(tmp_path), "results", 2026, 12,
+            str(tmp_path),
+            "results",
+            2026,
+            12,
             {"MRData": {"total": "1"}},
-            "https://api.jolpi.ca/ergast/f1/2026/12/results/")
+            "https://api.jolpi.ca/ergast/f1/2026/12/results/",
+        )
         landed = json.loads(open(path).read())
         assert set(landed) == {
-            "_ingest_ts", "_source_url", "_season", "_round", "_endpoint", "payload"}
+            "_ingest_ts",
+            "_source_url",
+            "_season",
+            "_round",
+            "_endpoint",
+            "payload",
+        }
         assert landed["_endpoint"] == "results"
         assert landed["_round"] == "12"
         assert landed["payload"]["MRData"]["total"] == "1"
 
     def test_one_line_so_auto_loader_can_read_without_multiline(self, tmp_path):
-        path = lw.write_payload(
-            str(tmp_path), "races", 2026, None, {"MRData": {}}, "https://x")
+        path = lw.write_payload(str(tmp_path), "races", 2026, None, {"MRData": {}}, "https://x")
         assert len(open(path).read().splitlines()) == 1

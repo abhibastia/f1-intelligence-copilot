@@ -91,6 +91,7 @@ def incremental_seasons(today: dt.date | None = None) -> list[int]:
     current = live_season(today)
     return [current - 1, current] if current > FIRST_SEASON else [current]
 
+
 # Jolpica publishes two limits and they bind at different scales:
 #   * 4 requests/second burst  — REQUESTS_PER_SECOND handles this
 #   * 500 requests/hour sustained — REQUESTS_PER_HOUR handles this

@@ -54,6 +54,7 @@ CONSTRUCTORS_SCHEMA = (
 
 # ──────────────────────────── dim_driver ────────────────────────────────
 
+
 @dp.temporary_view(name="driver_team_events")
 def driver_team_events():
     """One event per driver per race carrying the team they drove for."""
@@ -110,6 +111,7 @@ dp.create_auto_cdc_flow(
 
 
 # ────────────────────────── dim_constructor ─────────────────────────────
+
 
 @dp.temporary_view(name="constructor_events")
 def constructor_events():

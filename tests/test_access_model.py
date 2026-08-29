@@ -16,9 +16,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
-_spec = importlib.util.spec_from_file_location(
-    "apply_grants", ROOT / "scripts" / "apply_grants.py"
-)
+_spec = importlib.util.spec_from_file_location("apply_grants", ROOT / "scripts" / "apply_grants.py")
 apply_grants = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(apply_grants)
 

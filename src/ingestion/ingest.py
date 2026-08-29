@@ -19,6 +19,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 
+
 # A Databricks job does not guarantee the task file's directory is on sys.path,
 # so the sibling imports below would fail. Add it explicitly.
 #
@@ -45,20 +46,19 @@ def _module_dir() -> str:
 
 sys.path.insert(0, _module_dir())
 
+import weather
 from config import (
     ALL_ENDPOINTS,
-    backfill_seasons,
+    ARCHIVE_LAG_DAYS,
     BASE_URL,
-    incremental_seasons,
     ROUND_ENDPOINTS,
     SEASON_ENDPOINTS,
     VOLUME_ROOT,
+    backfill_seasons,
+    incremental_seasons,
 )
 from jolpica_client import JolpicaError, fetch_all
 from landing_writer import should_write, write_payload
-
-import weather
-from config import ARCHIVE_LAG_DAYS
 
 log = logging.getLogger("ingest")
 
@@ -106,9 +106,7 @@ def parse_race_coordinates(races_payload: dict) -> dict[int, tuple[float, float]
     for race in races:
         try:
             location = race["Circuit"]["Location"]
-            coords[int(race["round"])] = (
-                float(location["lat"]), float(location["long"])
-            )
+            coords[int(race["round"])] = (float(location["lat"]), float(location["long"]))
         except (KeyError, TypeError, ValueError):
             log.warning("no usable coordinates for round %s", race.get("round"))
     return coords
@@ -147,7 +145,11 @@ def ingest_season(season: int, root: str, summary: RunSummary) -> None:
                 payload = fetch_all(template.format(season=season))
                 summary.requests_made += 1
             write_payload(
-                root, endpoint, season, None, payload,
+                root,
+                endpoint,
+                season,
+                None,
+                payload,
                 f"{BASE_URL}/{template.format(season=season)}/",
             )
             summary.files_written += 1
@@ -169,9 +171,7 @@ def ingest_season(season: int, root: str, summary: RunSummary) -> None:
             try:
                 payload = fetch_all(path)
                 summary.requests_made += 1
-                write_payload(
-                    root, endpoint, season, round_no, payload, f"{BASE_URL}/{path}/"
-                )
+                write_payload(root, endpoint, season, round_no, payload, f"{BASE_URL}/{path}/")
                 summary.files_written += 1
             except JolpicaError as exc:
                 summary.failures.append(f"{endpoint} {season} r{round_no}: {exc}")
@@ -199,8 +199,12 @@ def ingest_race_weather(
         return
 
     if not weather.is_available(race_date):
-        log.info("weather %s r%s: inside the %s-day archive lag — skipping",
-                 season, round_no, ARCHIVE_LAG_DAYS)
+        log.info(
+            "weather %s r%s: inside the %s-day archive lag — skipping",
+            season,
+            round_no,
+            ARCHIVE_LAG_DAYS,
+        )
         summary.partitions_skipped += 1
         return
 
@@ -213,7 +217,11 @@ def ingest_race_weather(
         payload = weather.fetch_race_weather(latitude, longitude, race_date)
         summary.requests_made += 1
         write_payload(
-            root, "weather", season, round_no, payload,
+            root,
+            "weather",
+            season,
+            round_no,
+            payload,
             weather.build_url(latitude, longitude, race_date),
         )
         summary.files_written += 1
@@ -227,9 +235,7 @@ def main() -> int:
     parser.add_argument("--root", default=VOLUME_ROOT, help="landing zone root path")
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
 
     # Both are derived from today's date, never hardcoded — see config.py.
     seasons = backfill_seasons() if args.mode == "backfill" else incremental_seasons()

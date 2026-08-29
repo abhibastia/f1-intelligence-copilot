@@ -51,6 +51,7 @@ class UnknownRaceError(ValueError):
 # Resolution
 # --------------------------------------------------------------------------
 
+
 def resolve_driver(name: str, season: int | None = None) -> dict:
     """Resolve a free-text driver reference to a single driver.
 
@@ -76,8 +77,7 @@ def resolve_driver(name: str, season: int | None = None) -> dict:
         return exact[0]
 
     # Fall back to a substring match, which is what catches "verstappen".
-    where = ("WHERE (unaccent(lower(driver_name)) LIKE unaccent(%s) "
-             "    OR lower(driver_id) LIKE %s)")
+    where = "WHERE (unaccent(lower(driver_name)) LIKE unaccent(%s)     OR lower(driver_id) LIKE %s)"
     params = [f"%{needle}%", f"%{needle}%"]
     if season:
         where += " AND season = %s"
@@ -90,21 +90,18 @@ def resolve_driver(name: str, season: int | None = None) -> dict:
     )
     if not fuzzy:
         raise UnknownDriverError(
-            f"No driver matching {name!r}"
-            + (f" in {season}" if season else "")
+            f"No driver matching {name!r}" + (f" in {season}" if season else "")
         )
     if len(fuzzy) > 1:
         options = ", ".join(d["driver_name"] for d in fuzzy[:6])
-        raise UnknownDriverError(
-            f"{name!r} matches several drivers: {options}. Ask which one."
-        )
+        raise UnknownDriverError(f"{name!r} matches several drivers: {options}. Ask which one.")
     return fuzzy[0]
 
 
 def resolve_race(season: int, round_or_name) -> dict:
     """Resolve (season, round) or (season, race name) to one race."""
     season = int(season)
-    needle = None          # set only on the name path; guards the alias lookup
+    needle = None  # set only on the name path; guards the alias lookup
     try:
         rnd = int(round_or_name)
         rows = schema.query(
@@ -155,15 +152,14 @@ def resolve_race(season: int, round_or_name) -> dict:
         raise UnknownRaceError(f"No race matching {round_or_name!r} in {season}")
     if len(rows) > 1:
         options = ", ".join(f"R{r['round']} {r['race_name']}" for r in rows[:6])
-        raise UnknownRaceError(
-            f"{round_or_name!r} matches several races in {season}: {options}"
-        )
+        raise UnknownRaceError(f"{round_or_name!r} matches several races in {season}: {options}")
     return rows[0]
 
 
 # --------------------------------------------------------------------------
 # Reads
 # --------------------------------------------------------------------------
+
 
 def driver_season(name: str, season: int) -> dict:
     """A driver's race-by-race season, with totals."""
@@ -179,9 +175,7 @@ def driver_season(name: str, season: int) -> dict:
         (driver["driver_id"], int(season)),
     )
     if not rows:
-        raise UnknownDriverError(
-            f"{driver['driver_name']} has no {season} races on record"
-        )
+        raise UnknownDriverError(f"{driver['driver_name']} has no {season} races on record")
 
     def total(field):
         return sum(float(r[field] or 0) for r in rows)
@@ -195,8 +189,9 @@ def driver_season(name: str, season: int) -> dict:
         "wins": sum(1 for r in rows if str(r["is_win"]).lower() in ("true", "1")),
         "podiums": sum(1 for r in rows if str(r["is_podium"]).lower() in ("true", "1")),
         "dnfs": sum(1 for r in rows if str(r["dnf_flag"]).lower() in ("true", "1")),
-        "constructors": sorted({r["constructor_name_as_of_race"] for r in rows
-                                if r["constructor_name_as_of_race"]}),
+        "constructors": sorted(
+            {r["constructor_name_as_of_race"] for r in rows if r["constructor_name_as_of_race"]}
+        ),
         "results": rows,
     }
 
@@ -233,7 +228,7 @@ def compare_constructors(a: str, b: str, season: int) -> dict:
         }
 
     first, second = out[a], out[b]
-    leader = (first if first["points"] >= second["points"] else second)
+    leader = first if first["points"] >= second["points"] else second
     return {
         "season": season,
         "compared": out,
@@ -265,8 +260,12 @@ def championship_standings(season: int, round_: int | None = None) -> dict:
     )
     if not rows:
         raise UnknownRaceError(f"No standings for {season} round {round_}")
-    return {"season": season, "round": round_, "standings": rows,
-            "leader": rows[0]["driver_name"] if rows else None}
+    return {
+        "season": season,
+        "round": round_,
+        "standings": rows,
+        "leader": rows[0]["driver_name"] if rows else None,
+    }
 
 
 def race_weather(season: int, round_or_name) -> dict:
@@ -281,11 +280,13 @@ def race_weather(season: int, round_or_name) -> dict:
     )
     if not rows:
         return {
-            "resolved_race": race["race_name"], "season": race["season"],
-            "round": race["round"], "weather_available": False,
+            "resolved_race": race["race_name"],
+            "season": race["season"],
+            "round": race["round"],
+            "weather_available": False,
             "note": "No weather observation for this race. The archive lags "
-                    "about five days, so very recent races have none yet. "
-                    "This means NO DATA, not fair weather.",
+            "about five days, so very recent races have none yet. "
+            "This means NO DATA, not fair weather.",
         }
     observation = dict(rows[0])
     observation["resolved_race"] = race["race_name"]
@@ -314,12 +315,13 @@ def wet_races(season: int | None = None, limit: int = 10) -> dict:
         "threshold_mm": rows[0]["wet_threshold_mm"] if rows else 1.0,
         "races": rows,
         "note": "Wetness is measured rainfall from the weather archive, not a "
-                "description taken from the race report.",
+        "description taken from the race report.",
     }
 
 
-def search_reports(query: str, top_k: int = 5, season: int | None = None,
-                   round_: int | None = None) -> dict:
+def search_reports(
+    query: str, top_k: int = 5, season: int | None = None, round_: int | None = None
+) -> dict:
     """Semantic search over race-report prose, joined to measured weather."""
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must be a non-empty string")
@@ -357,16 +359,18 @@ def search_reports(query: str, top_k: int = 5, season: int | None = None,
             LIMIT %s""",
         tuple(params),
     )
-    return {"query": query.strip(), "top_k": top_k, "matches": len(rows),
-            "results": rows}
+    return {"query": query.strip(), "top_k": top_k, "matches": len(rows), "results": rows}
 
 
 def _has_results(season: int, rnd: int) -> bool:
     """Whether a round has been run. A scheduled round exists in f1_races long
     before anyone drives it, so presence in the spine proves nothing."""
-    return bool(schema.query(
-        f"SELECT 1 FROM {DRIVERS} WHERE season = %s AND round = %s LIMIT 1",
-        (int(season), int(rnd))))
+    return bool(
+        schema.query(
+            f"SELECT 1 FROM {DRIVERS} WHERE season = %s AND round = %s LIMIT 1",
+            (int(season), int(rnd)),
+        )
+    )
 
 
 def season_schedule(season: int) -> dict:
@@ -378,7 +382,8 @@ def season_schedule(season: int) -> dict:
     round number, and would either pass the phrase through as a race name or
     guess. A cheap ordered list is what makes those follow-ups answerable.
     """
-    rounds = schema.query(f"""
+    rounds = schema.query(
+        f"""
         SELECT r.season, r.round, r.race_name, r.race_date, r.circuit_name,
                r.circuit_country,
                (SELECT p.driver_name FROM {DRIVERS} p
@@ -388,7 +393,9 @@ def season_schedule(season: int) -> dict:
         FROM {schema.RACES} r
         LEFT JOIN {schema.WEATHER} w ON w.season = r.season AND w.round = r.round
         WHERE r.season = %s
-        ORDER BY r.round""", (int(season),))
+        ORDER BY r.round""",
+        (int(season),),
+    )
     if not rounds:
         raise ValueError(f"No races found for season {season}.")
     # Flag which rounds have actually been run, so the model does not report a
@@ -409,7 +416,8 @@ def race_strategy(season: int, round_or_name) -> dict:
     while a rival ran four means the result was decided in the pit lane.
     """
     race = resolve_race(season, round_or_name)
-    drivers = schema.query(f"""
+    drivers = schema.query(
+        f"""
         SELECT s.driver_id,
                max(p.driver_name)                       AS driver_name,
                max(p.constructor_name_as_of_race)       AS constructor,
@@ -423,14 +431,17 @@ def race_strategy(season: int, round_or_name) -> dict:
         WHERE s.season = %s AND s.round = %s
         GROUP BY s.driver_id
         ORDER BY min(COALESCE(p.finish_position, 99))""",
-        (race["season"], race["round"]))
+        (race["season"], race["round"]),
+    )
 
-    stops = schema.query(f"""
+    stops = schema.query(
+        f"""
         SELECT driver_id, stop_number, lap, duration_s
         FROM {schema.PIT_STOPS}
         WHERE season = %s AND round = %s AND duration_s IS NOT NULL
         ORDER BY duration_s DESC LIMIT 5""",
-        (race["season"], race["round"]))
+        (race["season"], race["round"]),
+    )
 
     if not drivers:
         # Distinguish "we have no strategy data" from "this race has not been
@@ -441,28 +452,33 @@ def race_strategy(season: int, round_or_name) -> dict:
         if not _has_results(race["season"], race["round"]):
             return {
                 "resolved_race": race["race_name"],
-                "season": race["season"], "round": race["round"],
+                "season": race["season"],
+                "round": race["round"],
                 "status": "not_yet_raced",
                 "race_date": str(race.get("race_date")),
-                "message": (f"The {race['season']} {race['race_name']} is round "
-                            f"{race['round']}, scheduled for {race.get('race_date')}, "
-                            "and has not been raced yet. There is no result, no "
-                            "strategy and no race report. Do not search for one."),
+                "message": (
+                    f"The {race['season']} {race['race_name']} is round "
+                    f"{race['round']}, scheduled for {race.get('race_date')}, "
+                    "and has not been raced yet. There is no result, no "
+                    "strategy and no race report. Do not search for one."
+                ),
             }
 
     counts = [int(d["stints"]) for d in drivers if d["stints"]]
     return {
         "resolved_race": race["race_name"],
-        "season": race["season"], "round": race["round"],
+        "season": race["season"],
+        "round": race["round"],
         "drivers_analysed": len(drivers),
         "stint_spread": (f"{min(counts)}-{max(counts)}" if counts else None),
-        "most_common_strategy": (f"{max(set(counts), key=counts.count)} stint(s)"
-                                 if counts else None),
+        "most_common_strategy": (
+            f"{max(set(counts), key=counts.count)} stint(s)" if counts else None
+        ),
         "slowest_stops": stops,
         "by_driver": drivers,
         "note": "Stints are derived from pit-stop laps. Tyre compounds are not "
-                "available from this data source - the race report's 'Tyre "
-                "choices' section covers those.",
+        "available from this data source - the race report's 'Tyre "
+        "choices' section covers those.",
     }
 
 
@@ -474,7 +490,8 @@ def strategy_spread(season: int, limit: int = 8) -> dict:
     interesting decisions are - far better than ranking by rainfall.
     """
     limit = max(1, min(int(limit), MAX_RESULTS))
-    rows = schema.query(f"""
+    rows = schema.query(
+        f"""
         SELECT s.season, s.round, r.race_name, w.was_wet, w.precipitation_mm,
                min(t.stints) AS min_stints, max(t.stints) AS max_stints,
                round(avg(t.stints)::numeric, 2) AS avg_stints,
@@ -487,10 +504,15 @@ def strategy_spread(season: int, limit: int = 8) -> dict:
         LEFT JOIN {schema.WEATHER} w ON w.season = s.season AND w.round = s.round
         WHERE s.season = %s
         GROUP BY s.season, s.round, r.race_name, w.was_wet, w.precipitation_mm
-        ORDER BY spread DESC, s.round LIMIT %s""", (int(season), limit))
-    return {"season": int(season), "races": rows,
-            "note": "Spread is the gap between the fewest and most stints any "
-                    "driver ran. A wide spread means the field split on strategy."}
+        ORDER BY spread DESC, s.round LIMIT %s""",
+        (int(season), limit),
+    )
+    return {
+        "season": int(season),
+        "races": rows,
+        "note": "Spread is the gap between the fewest and most stints any "
+        "driver ran. A wide spread means the field split on strategy.",
+    }
 
 
 def race_pace(season: int, round_or_name) -> dict:
@@ -503,7 +525,8 @@ def race_pace(season: int, round_or_name) -> dict:
     not the quickest car on the day.
     """
     race = resolve_race(season, round_or_name)
-    rows = schema.query(f"""
+    rows = schema.query(
+        f"""
         SELECT driver_id, driver_name, constructor_name_as_of_race,
                laps_recorded, clean_laps, laps_led, median_clean_lap_s,
                best_lap_s, consistency_s, reference_median_s, pace_deficit_pct,
@@ -512,34 +535,40 @@ def race_pace(season: int, round_or_name) -> dict:
         FROM {schema.LAP_PACE}
         WHERE season = %s AND round = %s
         ORDER BY median_clean_lap_s""",
-        (race["season"], race["round"]))
+        (race["season"], race["round"]),
+    )
     if not rows:
         if not _has_results(race["season"], race["round"]):
             return {
                 "resolved_race": race["race_name"],
-                "season": race["season"], "round": race["round"],
+                "season": race["season"],
+                "round": race["round"],
                 "status": "not_yet_raced",
                 "race_date": str(race.get("race_date")),
-                "message": (f"The {race['season']} {race['race_name']} is round "
-                            f"{race['round']}, scheduled for {race.get('race_date')}, "
-                            "and has not been raced yet. There is no lap-time data."),
+                "message": (
+                    f"The {race['season']} {race['race_name']} is round "
+                    f"{race['round']}, scheduled for {race.get('race_date')}, "
+                    "and has not been raced yet. There is no lap-time data."
+                ),
             }
         return {
             "resolved_race": race["race_name"],
-            "season": race["season"], "round": race["round"],
+            "season": race["season"],
+            "round": race["round"],
             "drivers_analysed": 0,
             "note": "No lap-time data recorded for this race.",
         }
     return {
         "resolved_race": race["race_name"],
-        "season": race["season"], "round": race["round"],
+        "season": race["season"],
+        "round": race["round"],
         "drivers_analysed": len(rows),
         "fastest_on_the_day": rows[0]["driver_name"],
         "by_driver": rows,
         "note": "Pace is measured on clean laps only - within 107% of each "
-                "driver's own best in that race - so traffic, pit cycles and "
-                "safety-car laps do not distort it. pace_deficit_pct is "
-                "relative to the fastest median in the race, not the winner's.",
+        "driver's own best in that race - so traffic, pit cycles and "
+        "safety-car laps do not distort it. pace_deficit_pct is "
+        "relative to the fastest median in the race, not the winner's.",
     }
 
 
@@ -553,33 +582,42 @@ def constructor_standings(season: int, round_: int | None = None) -> dict:
     season = int(season)
     if round_ is None:
         latest = schema.query(
-            f"SELECT max(round) AS r FROM {schema.CONSTRUCTOR_STANDINGS} "
-            f"WHERE season = %s", (season,))
+            f"SELECT max(round) AS r FROM {schema.CONSTRUCTOR_STANDINGS} WHERE season = %s",
+            (season,),
+        )
         round_ = latest[0]["r"] if latest and latest[0]["r"] is not None else None
         if round_ is None:
             raise UnknownRaceError(f"No constructor standings for {season}")
     round_ = int(round_)
 
-    rows = schema.query(f"""
+    rows = schema.query(
+        f"""
         SELECT championship_position, constructor_id, constructor_name,
                constructor_nationality, cumulative_points, cumulative_wins,
                gap_to_leader, points_gained_in_round, position_change_vs_prev_round
         FROM {schema.CONSTRUCTOR_STANDINGS}
         WHERE season = %s AND round = %s
         ORDER BY championship_position""",
-        (season, round_))
+        (season, round_),
+    )
     if not rows:
         raise UnknownRaceError(f"No constructor standings for {season} round {round_}")
-    return {"season": season, "round": round_, "standings": rows,
-            "leader": rows[0]["constructor_name"] if rows else None}
+    return {
+        "season": season,
+        "round": round_,
+        "standings": rows,
+        "leader": rows[0]["constructor_name"] if rows else None,
+    }
 
 
 # --------------------------------------------------------------------------
 # Writes — the capstone's "agent takes real actions" requirement
 # --------------------------------------------------------------------------
 
-def add_watchlist(entity_type: str, entity_ref: str, note: str | None = None,
-                  user_id: str = "default") -> dict:
+
+def add_watchlist(
+    entity_type: str, entity_ref: str, note: str | None = None, user_id: str = "default"
+) -> dict:
     """Track a driver, constructor or circuit. Idempotent."""
     entity_type = str(entity_type).strip().lower()
     if entity_type not in ("driver", "constructor", "circuit"):
@@ -614,9 +652,14 @@ def get_watchlist(user_id: str = "default") -> dict:
     return {"user_id": user_id, "count": len(rows), "items": rows}
 
 
-def log_prediction(season: int, round_or_name, prediction: str,
-                   confidence: str = "medium", rationale: str | None = None,
-                   user_id: str = "default") -> dict:
+def log_prediction(
+    season: int,
+    round_or_name,
+    prediction: str,
+    confidence: str = "medium",
+    rationale: str | None = None,
+    user_id: str = "default",
+) -> dict:
     """Record a prediction against a specific race."""
     if not str(prediction).strip():
         raise ValueError("prediction must be a non-empty string")
@@ -630,16 +673,14 @@ def log_prediction(season: int, round_or_name, prediction: str,
                 (user_id, season, round, prediction, confidence, rationale)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, season, round, prediction, confidence, rationale, created_at""",
-        (user_id, race["season"], race["round"], str(prediction).strip(),
-         confidence, rationale),
+        (user_id, race["season"], race["round"], str(prediction).strip(), confidence, rationale),
     )
     row = dict(rows[0])
     row["race_name"] = race["race_name"]
     return {"written": True, "action": "log_prediction", "row": row}
 
 
-def save_note(season: int, round_or_name, note: str,
-              user_id: str = "default") -> dict:
+def save_note(season: int, round_or_name, note: str, user_id: str = "default") -> dict:
     """Save a free-text analyst note against a race."""
     if not str(note).strip():
         raise ValueError("note must be a non-empty string")
@@ -655,8 +696,9 @@ def save_note(season: int, round_or_name, note: str,
     return {"written": True, "action": "save_race_note", "row": row}
 
 
-def get_notes(season: int | None = None, round_: int | None = None,
-              user_id: str = "default", limit: int = 20) -> dict:
+def get_notes(
+    season: int | None = None, round_: int | None = None, user_id: str = "default", limit: int = 20
+) -> dict:
     # Every column must be table-qualified. Both f1_race_notes and f1_races
     # carry `season` and `round`, so an unqualified filter raises
     # "column reference is ambiguous" the moment a season is supplied - which
@@ -673,15 +715,14 @@ def get_notes(season: int | None = None, round_: int | None = None,
         f"""SELECT n.id, n.season, n.round, r.race_name, n.note, n.created_at
             FROM {schema.NOTES} n
             LEFT JOIN {schema.RACES} r ON r.season = n.season AND r.round = n.round
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY n.created_at DESC LIMIT %s""",
         tuple(params),
     )
     return {"count": len(rows), "notes": rows}
 
 
-def get_predictions(season: int | None = None, user_id: str = "default",
-                    limit: int = 20) -> dict:
+def get_predictions(season: int | None = None, user_id: str = "default", limit: int = 20) -> dict:
     clauses, params = ["p.user_id = %s"], [user_id]
     if season:
         clauses.append("p.season = %s")
@@ -692,7 +733,7 @@ def get_predictions(season: int | None = None, user_id: str = "default",
                    p.confidence, p.rationale, p.created_at
             FROM {schema.PREDICTIONS} p
             LEFT JOIN {schema.RACES} r ON r.season = p.season AND r.round = p.round
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY p.created_at DESC LIMIT %s""",
         tuple(params),
     )
@@ -715,6 +756,7 @@ def get_predictions(season: int | None = None, user_id: str = "default",
 # WHERE id = %s AND user_id = %s together, always: user_id scopes every delete
 # to its owner, so one user can never delete another's row even if they guess
 # an id. RETURNING id is how a "not found" is distinguished from "deleted".
+
 
 def remove_from_watchlist(item_id: int, user_id: str = "default") -> dict:
     rows = schema.returning(

@@ -25,11 +25,11 @@ Run locally:
 import logging
 import os
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
-
 import agent
 import f1_broker
 import ui_data
+from flask import Flask, jsonify, redirect, render_template, request, url_for
+
 from f1lake import schema
 
 logging.basicConfig(level=logging.INFO)
@@ -83,9 +83,18 @@ def index():
         # in the browser would not say so.
         logger.exception("Could not render the dashboard")
         return render_template(
-            "index.html", stats={}, thresholds=[], thesis=[], seasons=[],
-            season=None, races=[], standings=[], activity={}, strategy=[],
-            mcp_url=MCP_URL, dashboard_url=DASHBOARD_URL,
+            "index.html",
+            stats={},
+            thresholds=[],
+            thesis=[],
+            seasons=[],
+            season=None,
+            races=[],
+            standings=[],
+            activity={},
+            strategy=[],
+            mcp_url=MCP_URL,
+            dashboard_url=DASHBOARD_URL,
             error=schema.safe_message(exc),
         )
 
@@ -93,6 +102,7 @@ def index():
 # --------------------------------------------------------------------------
 # Deletes — the one direct write this page makes; see the module docstring.
 # --------------------------------------------------------------------------
+
 
 @app.route("/api/watchlist/<int:item_id>/delete", methods=["POST"])
 def delete_watchlist_item(item_id):
@@ -149,10 +159,12 @@ def api_chat():
         return jsonify(result)
     except Exception as exc:
         logger.exception("Agent call failed")
-        return jsonify({
-            "error": "The assistant could not answer that.",
-            "detail": schema.safe_message(exc),
-        }), 503
+        return jsonify(
+            {
+                "error": "The assistant could not answer that.",
+                "detail": schema.safe_message(exc),
+            }
+        ), 503
 
 
 @app.route("/api/search")
@@ -163,8 +175,7 @@ def api_search():
         return jsonify({"error": "Enter something to search for."}), 400
     season = request.args.get("season", type=int)
     try:
-        results = ui_data.search(query, top_k=request.args.get("k", 6, type=int),
-                                 season=season)
+        results = ui_data.search(query, top_k=request.args.get("k", 6, type=int), season=season)
         return jsonify({"query": query, "count": len(results), "results": results})
     except Exception as exc:
         logger.exception("Search failed")

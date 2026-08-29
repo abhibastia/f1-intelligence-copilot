@@ -30,6 +30,7 @@ a failure partway through.
 Every stage is idempotent. Re-running skips what is already present rather
 than duplicating it, so interrupting this and starting again is safe.
 """
+
 import argparse
 import os
 import subprocess
@@ -42,6 +43,7 @@ sys.path.insert(0, ROOT)
 
 def _counts() -> dict:
     from f1lake import schema
+
     return schema.query("""
         SELECT (SELECT count(*) FROM f1_races)          AS races,
                (SELECT count(*) FROM f1_documents)      AS documents,
@@ -61,22 +63,26 @@ def _report(before: dict, after: dict) -> str:
 # here can be moved without breaking what follows it.
 def stage_schema():
     from f1lake import schema
+
     schema.ensure_schema()
 
 
 def stage_harvest():
-    subprocess.run([sys.executable, os.path.join(ROOT, "jobs", "run_harvest.py")],
-                   check=True, cwd=ROOT)
+    subprocess.run(
+        [sys.executable, os.path.join(ROOT, "jobs", "run_harvest.py")], check=True, cwd=ROOT
+    )
 
 
 def stage_embed():
-    subprocess.run([sys.executable, os.path.join(ROOT, "jobs", "run_embed.py")],
-                   check=True, cwd=ROOT)
+    subprocess.run(
+        [sys.executable, os.path.join(ROOT, "jobs", "run_embed.py")], check=True, cwd=ROOT
+    )
 
 
 def stage_seed():
-    subprocess.run([sys.executable, os.path.join(ROOT, "jobs", "run_seed_gold.py")],
-                   check=True, cwd=ROOT)
+    subprocess.run(
+        [sys.executable, os.path.join(ROOT, "jobs", "run_seed_gold.py")], check=True, cwd=ROOT
+    )
 
 
 def stage_cdf():
@@ -86,35 +92,49 @@ def stage_cdf():
     BUNDLE_VAR_warehouse_id is set (databricks.yml has no default for it - a
     hardcoded warehouse id would silently target the wrong workspace on a
     fork)."""
-    subprocess.run(["databricks", "bundle", "run", "f1_cdf_analytics", "-t", "dev",
-                    "--profile", os.environ.get("DATABRICKS_CONFIG_PROFILE", "DEFAULT")],
-                   check=True, cwd=ROOT)
+    subprocess.run(
+        [
+            "databricks",
+            "bundle",
+            "run",
+            "f1_cdf_analytics",
+            "-t",
+            "dev",
+            "--profile",
+            os.environ.get("DATABRICKS_CONFIG_PROFILE", "DEFAULT"),
+        ],
+        check=True,
+        cwd=ROOT,
+    )
 
 
 STAGES = [
-    ("schema",  "create tables and indexes (idempotent)",        stage_schema, False),
-    ("harvest", "Wikipedia race reports -> Lakebase",             stage_harvest, False),
-    ("embed",   "chunk and embed new documents",                 stage_embed,  False),
-    ("seed",    "weather, pit stops, Gold marts, stints -> Lakebase", stage_seed, True),
-    ("cdf",     "tool calls -> Delta -> Change Data Feed",       stage_cdf,    True),
+    ("schema", "create tables and indexes (idempotent)", stage_schema, False),
+    ("harvest", "Wikipedia race reports -> Lakebase", stage_harvest, False),
+    ("embed", "chunk and embed new documents", stage_embed, False),
+    ("seed", "weather, pit stops, Gold marts, stints -> Lakebase", stage_seed, True),
+    ("cdf", "tool calls -> Delta -> Change Data Feed", stage_cdf, True),
 ]
 
 
 def main() -> int:
     names = [s[0] for s in STAGES]
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--only", choices=names, action="append",
-                        help="run only these stages (repeatable)")
-    parser.add_argument("--skip", choices=names, action="append", default=[],
-                        help="skip these stages (repeatable)")
-    parser.add_argument("--with-spark", action="store_true",
-                        help="include the stages that spend Databricks compute")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="list what would run, with current row counts")
+    parser.add_argument(
+        "--only", choices=names, action="append", help="run only these stages (repeatable)"
+    )
+    parser.add_argument(
+        "--skip", choices=names, action="append", default=[], help="skip these stages (repeatable)"
+    )
+    parser.add_argument(
+        "--with-spark", action="store_true", help="include the stages that spend Databricks compute"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="list what would run, with current row counts"
+    )
     args = parser.parse_args()
 
-    selected = [s for s in STAGES
-                if (not args.only or s[0] in args.only) and s[0] not in args.skip]
+    selected = [s for s in STAGES if (not args.only or s[0] in args.only) and s[0] not in args.skip]
     if not args.only and not args.with_spark:
         selected = [s for s in selected if not s[3]]
 

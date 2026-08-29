@@ -25,7 +25,7 @@ import glob
 import json
 import logging
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 logger = logging.getLogger("races")
 
@@ -37,7 +37,7 @@ class Race:
     season: int
     round: int
     race_name: str
-    race_date: str          # ISO date
+    race_date: str  # ISO date
     circuit_id: str
     circuit_name: str
     circuit_country: str
@@ -76,12 +76,7 @@ def load_races(landing_dir: str | None = None) -> list[Race]:
         with open(path) as fh:
             payload = json.load(fh)
         # Landing files wrap the API response: {_ingest_ts, _endpoint, payload}
-        items = (
-            payload.get("payload", {})
-            .get("MRData", {})
-            .get("RaceTable", {})
-            .get("Races", [])
-        )
+        items = payload.get("payload", {}).get("MRData", {}).get("RaceTable", {}).get("Races", [])
         for item in items:
             location = item.get("Circuit", {}).get("Location", {})
             try:

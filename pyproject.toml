@@ -1,0 +1,39 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".databricks",
+    "data",
+    "*.md",
+]
+# Ruff formats fenced ```python blocks inside Markdown by default (0.16+), and
+# the ruff-pre-commit `ruff-format` hook passes .md files explicitly (its
+# types_or includes markdown) - explicit args skip `include` but still honor
+# `exclude` via --force-exclude, hence the *.md entry above. docs/ content is
+# out of scope for this pass.
+include = ["*.py", "*.pyi"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+# E501 (line-too-long) conflicts with the formatter by design: the formatter
+# wraps "best effort" but deliberately never splits inside string/regex
+# literals, so a handful of long SQL fragments and regexes would otherwise
+# stay permanently red. https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["f1lake", "harvest", "mcp_server", "app", "src", "jobs"]
+
+[tool.ruff.lint.per-file-ignores]
+# `spark`, `dbutils`, `display` are injected into these files' namespace by
+# the Databricks Lakeflow/notebook runtime, never imported - see CLAUDE.md's
+# "API conventions" section.
+"src/pipeline/*.py" = ["F821"]
+"notebooks/*.py" = ["F821", "E402"]
+# os.environ.setdefault(...) has to run before the import that reads it at
+# import time (e.g. SENTENCE_TRANSFORMERS_HOME, F1_LANDING_DIR).
+"jobs/*.py" = ["E402"]
+"src/ingestion/ingest.py" = ["E402"]

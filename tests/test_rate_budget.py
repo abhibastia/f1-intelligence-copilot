@@ -8,6 +8,7 @@ in the first five minutes and spends the rest of the harvest collecting 429s.
 The clock and sleeper are injected so these assert on *how long it would wait*
 rather than actually waiting.
 """
+
 import jolpica_client as jc
 
 
@@ -73,7 +74,7 @@ class TestSustainedLimit:
         b, clock = budget(per_second=1000.0, per_hour=3)
         for _ in range(3):
             b.acquire()
-        clock.now += jc.HOUR_SECONDS + 1        # every request ages out
+        clock.now += jc.HOUR_SECONDS + 1  # every request ages out
         b.acquire()
         assert clock.long_waits == [], "expired requests should not count against the budget"
 
@@ -105,5 +106,6 @@ class TestRealisticHarvest:
         for _ in range(850):
             b.acquire()
         assert clock.now > jc.HOUR_SECONDS, (
-            "850 requests must span more than an hour under a 450/hour ceiling")
+            "850 requests must span more than an hour under a 450/hour ceiling"
+        )
         assert b.used_this_hour <= 450

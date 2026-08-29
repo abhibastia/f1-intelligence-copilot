@@ -5,6 +5,7 @@ while the outer array holds one race. Counting the outer length would mean the
 loop never reaches `total` and pages forever — the exact failure mode that
 turns a 12-page lap fetch into an unbounded one.
 """
+
 import jolpica_client as jc
 
 
@@ -49,9 +50,17 @@ class TestCountRecords:
         """The real shape: 1,008 timings at 100 per page."""
         pages = []
         for i in range(11):
-            n = 5 if i < 10 else 1                      # last page is short
-            pages.append({"MRData": {"total": "1008", "RaceTable": {"Races": [
-                {"Laps": [{"Timings": [{}] * 20} for _ in range(n)]}]}}})
+            n = 5 if i < 10 else 1  # last page is short
+            pages.append(
+                {
+                    "MRData": {
+                        "total": "1008",
+                        "RaceTable": {
+                            "Races": [{"Laps": [{"Timings": [{}] * 20} for _ in range(n)]}]
+                        },
+                    }
+                }
+            )
         calls = []
 
         def fake_get(url):
@@ -69,8 +78,7 @@ class TestCountRecords:
 
         def fake_get(url):
             calls.append(url)
-            return {"MRData": {"total": "30",
-                               "RaceTable": {"Races": [{"PitStops": [{}] * 30}]}}}
+            return {"MRData": {"total": "30", "RaceTable": {"Races": [{"PitStops": [{}] * 30}]}}}
 
         monkeypatch.setattr(jc, "_get", fake_get)
         jc.fetch_all("2024/16/pitstops")
@@ -110,26 +118,33 @@ class TestFetchAllPaging:
         return calls
 
     def test_stops_once_total_is_reached(self, monkeypatch):
-        page = lambda n, total: {
-            "MRData": {"total": str(total), "RaceTable": {"Races": [{"Results": [{}] * n}]}}
-        }
+        def page(n, total):
+            return {
+                "MRData": {"total": str(total), "RaceTable": {"Races": [{"Results": [{}] * n}]}}
+            }
+
         calls = self._install(monkeypatch, [page(100, 150), page(50, 150)])
         result = jc.fetch_all("2024/1/laps")
         assert len(calls) == 2, "should stop as soon as the running count reaches total"
         assert len(result["MRData"]["RaceTable"]["Races"]) == 2
 
     def test_single_page_makes_one_request(self, monkeypatch):
-        calls = self._install(monkeypatch, [
-            {"MRData": {"total": "20", "RaceTable": {"Races": [{"Results": [{}] * 20}]}}}])
+        calls = self._install(
+            monkeypatch,
+            [{"MRData": {"total": "20", "RaceTable": {"Races": [{"Results": [{}] * 20}]}}}],
+        )
         jc.fetch_all("2024/1/results")
         assert len(calls) == 1
 
     def test_an_empty_page_stops_the_loop(self, monkeypatch):
         """A `total` that overstates reality must not page forever."""
-        calls = self._install(monkeypatch, [
-            {"MRData": {"total": "9999", "RaceTable": {"Races": [{"Results": [{}] * 100}]}}},
-            {"MRData": {"total": "9999", "RaceTable": {"Races": []}}},
-        ])
+        calls = self._install(
+            monkeypatch,
+            [
+                {"MRData": {"total": "9999", "RaceTable": {"Races": [{"Results": [{}] * 100}]}}},
+                {"MRData": {"total": "9999", "RaceTable": {"Races": []}}},
+            ],
+        )
         jc.fetch_all("2024/1/laps")
         assert len(calls) == 2, "should give up rather than loop on an empty page"
 

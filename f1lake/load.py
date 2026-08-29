@@ -48,7 +48,7 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
     step = size - overlap
     chunks = []
     for start in range(0, len(text), step):
-        piece = text[start:start + size].strip()
+        piece = text[start : start + size].strip()
         if piece:
             chunks.append(piece)
         if start + size >= len(text):
@@ -58,7 +58,7 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
 
 def document_id(season: int, rnd: int, section: str) -> str:
     """Deterministic id so a re-load updates the same row instead of adding one."""
-    raw = f"{season}|{rnd}|{section}".encode("utf-8")
+    raw = f"{season}|{rnd}|{section}".encode()
     return hashlib.sha1(raw).hexdigest()[:24]
 
 
@@ -89,9 +89,18 @@ def disambiguate(sections: list[dict]) -> list[tuple[str, str]]:
 def load_races(path: str) -> int:
     races = json.load(open(path))
     rows = [
-        (r["season"], r["round"], r["race_name"], r["race_date"] or None,
-         r["circuit_id"], r["circuit_name"], r["circuit_country"],
-         r["circuit_lat"], r["circuit_long"], r["wikipedia_url"])
+        (
+            r["season"],
+            r["round"],
+            r["race_name"],
+            r["race_date"] or None,
+            r["circuit_id"],
+            r["circuit_name"],
+            r["circuit_country"],
+            r["circuit_lat"],
+            r["circuit_long"],
+            r["wikipedia_url"],
+        )
         for r in races
     ]
     sql = f"""
@@ -121,8 +130,10 @@ def harvested_races() -> set[tuple[int, int]]:
     has to be checked against Lakebase because ephemeral job compute has no
     local file that survives a retry.
     """
-    return {(r["season"], r["round"]) for r in
-            schema.query(f"SELECT DISTINCT season, round FROM {schema.DOCUMENTS}")}
+    return {
+        (r["season"], r["round"])
+        for r in schema.query(f"SELECT DISTINCT season, round FROM {schema.DOCUMENTS}")
+    }
 
 
 def load_documents(reports: list[dict]) -> tuple[int, int]:
@@ -137,12 +148,20 @@ def load_documents(reports: list[dict]) -> tuple[int, int]:
     rows = []
     for report in reports:
         for label, body in disambiguate(report["sections"]):
-            rows.append((
-                document_id(report["season"], report["round"], label),
-                report["season"], report["round"], report["race_name"],
-                report["race_date"] or None, report["circuit_id"],
-                label, report["title"], report["url"], body,
-            ))
+            rows.append(
+                (
+                    document_id(report["season"], report["round"], label),
+                    report["season"],
+                    report["round"],
+                    report["race_name"],
+                    report["race_date"] or None,
+                    report["circuit_id"],
+                    label,
+                    report["title"],
+                    report["url"],
+                    body,
+                )
+            )
     sql = f"""
         INSERT INTO {schema.DOCUMENTS}
             (id, season, round, race_name, race_date, circuit_id,
@@ -186,8 +205,17 @@ def load_embeddings(batch_size: int = 64, rebuild: bool = False) -> int:
     pending = []
     for doc in docs:
         for i, piece in enumerate(chunk_text(doc["body"])):
-            pending.append((f"{doc['id']}_{i}", doc["id"], doc["season"],
-                            doc["round"], doc["section"], i, piece))
+            pending.append(
+                (
+                    f"{doc['id']}_{i}",
+                    doc["id"],
+                    doc["season"],
+                    doc["round"],
+                    doc["section"],
+                    i,
+                    piece,
+                )
+            )
     logger.info("  %d documents -> %d chunks", len(docs), len(pending))
 
     sql = f"""
@@ -209,13 +237,21 @@ def load_embeddings(batch_size: int = 64, rebuild: bool = False) -> int:
     with schema.connection() as conn:
         with schema.cursor(conn) as cur:
             for start in range(0, len(pending), batch_size):
-                batch = pending[start:start + batch_size]
+                batch = pending[start : start + batch_size]
                 vectors = embedder.embed_texts([b[6] for b in batch])
                 payload = [
-                    (cid, did, season, rnd, section, idx, text,
-                     embedder.to_pgvector(vec), embedder.MODEL_NAME)
-                    for (cid, did, season, rnd, section, idx, text), vec
-                    in zip(batch, vectors)
+                    (
+                        cid,
+                        did,
+                        season,
+                        rnd,
+                        section,
+                        idx,
+                        text,
+                        embedder.to_pgvector(vec),
+                        embedder.MODEL_NAME,
+                    )
+                    for (cid, did, season, rnd, section, idx, text), vec in zip(batch, vectors)
                 ]
                 execute_values(cur, sql, payload, template=template, page_size=100)
                 conn.commit()
@@ -250,8 +286,11 @@ def main() -> None:
                (SELECT count(*) FROM {schema.EMBEDDINGS}) AS embeddings,
                (SELECT count(*) FROM {schema.WEATHER})    AS weather
     """)[0]
-    logger.info("\nDone. races=%(races)d documents=%(documents)d "
-                "embeddings=%(embeddings)d weather=%(weather)d", totals)
+    logger.info(
+        "\nDone. races=%(races)d documents=%(documents)d "
+        "embeddings=%(embeddings)d weather=%(weather)d",
+        totals,
+    )
 
 
 if __name__ == "__main__":

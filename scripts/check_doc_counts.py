@@ -30,6 +30,7 @@ audit of them needs a warehouse query or `tests/spark`.
 Run this after every pipeline run that lands a new round, before touching any
 doc by hand.
 """
+
 import glob
 import json
 import os
@@ -38,8 +39,18 @@ import sys
 
 LANDING = "landing"
 
-WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-          "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
 
 
 def to_seconds(t: str) -> float:
@@ -181,45 +192,71 @@ def main() -> int:
 
     print("Recomputed from landing/ (no Spark, no warehouse):")
     print(f"  seasons               {sorted(per_season)}")
-    print(f"  rounds                {total_rounds}  ({' + '.join(str(v) for _, v in sorted(per_season.items()))})")
-    print(f"  lap timings           {total_laps} landed, {bad_laps} outside 40-300s, {clean_laps} clean")
+    print(
+        f"  rounds                {total_rounds}  ({' + '.join(str(v) for _, v in sorted(per_season.items()))})"
+    )
+    print(
+        f"  lap timings           {total_laps} landed, {bad_laps} outside 40-300s, {clean_laps} clean"
+    )
     print(f"  bad driver_standings  {bad_standings} row(s) with no position")
     print(f"  bad pit stops         {bad_pit} of {total_pit} with an empty duration")
-    print(f"  reconciliation        {mismatches} mismatch(es) across {checked_driver_seasons} driver-seasons")
+    print(
+        f"  reconciliation        {mismatches} mismatch(es) across {checked_driver_seasons} driver-seasons"
+    )
     print()
 
     # (file, regex capturing the claimed number, truth value, label)
     CLAIMS = [
-        ("README.md",
-         r"laps\*{0,2} \(driver × race × lap, ([\d,]+) rows\)",
-         clean_laps, "grain table: clean lap-timing rows"),
-        ("docs/architecture.md",
-         r"fact_lap.{0,60}\| ([\d,]+) \|",
-         clean_laps, "§7.1 grain table: fact_lap row count"),
-        ("docs/architecture.md",
-         r"finest grain is the lap\*\*, at ([\d,]+) rows",
-         clean_laps, "§7.1 prose: finest-grain lap count"),
-        ("docs/runbook.md",
-         r"(\d+) lap rows fail",
-         bad_laps, "quarantine census: bad laps"),
-        ("docs/runbook.md",
-         r"(\d+) standings rows with no championship position",
-         bad_standings, "quarantine census: bad standings"),
-        ("docs/runbook.md",
-         r"(\d+) pit stops published with.{0,3}an empty duration",
-         bad_pit, "quarantine census: bad pit stops"),
-        ("docs/architecture.md",
-         r"(\d+) lap rows fail",
-         bad_laps, "quarantine census: bad laps"),
-        ("docs/architecture.md",
-         r"(\d+) standings rows arrive with no championship position",
-         bad_standings, "quarantine census: bad standings"),
-        ("docs/architecture.md",
-         r"(\d+) pit stops are published with.{0,3}an empty duration",
-         bad_pit, "quarantine census: bad pit stops"),
-        ("docs/architecture.md",
-         r"\*\*(\w+) quarantined `driver_standing` rows\.?\*\*",
-         bad_standings, "gaps list: quarantined driver_standing rows"),
+        (
+            "README.md",
+            r"laps\*{0,2} \(driver × race × lap, ([\d,]+) rows\)",
+            clean_laps,
+            "grain table: clean lap-timing rows",
+        ),
+        (
+            "docs/architecture.md",
+            r"fact_lap.{0,60}\| ([\d,]+) \|",
+            clean_laps,
+            "§7.1 grain table: fact_lap row count",
+        ),
+        (
+            "docs/architecture.md",
+            r"finest grain is the lap\*\*, at ([\d,]+) rows",
+            clean_laps,
+            "§7.1 prose: finest-grain lap count",
+        ),
+        ("docs/runbook.md", r"(\d+) lap rows fail", bad_laps, "quarantine census: bad laps"),
+        (
+            "docs/runbook.md",
+            r"(\d+) standings rows with no championship position",
+            bad_standings,
+            "quarantine census: bad standings",
+        ),
+        (
+            "docs/runbook.md",
+            r"(\d+) pit stops published with.{0,3}an empty duration",
+            bad_pit,
+            "quarantine census: bad pit stops",
+        ),
+        ("docs/architecture.md", r"(\d+) lap rows fail", bad_laps, "quarantine census: bad laps"),
+        (
+            "docs/architecture.md",
+            r"(\d+) standings rows arrive with no championship position",
+            bad_standings,
+            "quarantine census: bad standings",
+        ),
+        (
+            "docs/architecture.md",
+            r"(\d+) pit stops are published with.{0,3}an empty duration",
+            bad_pit,
+            "quarantine census: bad pit stops",
+        ),
+        (
+            "docs/architecture.md",
+            r"\*\*(\w+) quarantined `driver_standing` rows\.?\*\*",
+            bad_standings,
+            "gaps list: quarantined driver_standing rows",
+        ),
     ]
 
     ok = fail = 0
@@ -246,11 +283,17 @@ def main() -> int:
     print(f"\n{ok}/{len(CLAIMS)} claims match the recomputed truth")
 
     print("\nNot checked here — need Spark/warehouse, spot-check by hand:")
-    print("  README.md               \"150 driver-races ... 232 ahead\" (pace vs. finish, driver_performance + lap_pace)")
-    print("  README.md               \"0.69 places ... 0.40\" (strategy finding, race_strategy)")
-    print("  README.md / CLAUDE.md   dim_driver SCD-2 history (versions / drivers / historical rows) —")
+    print(
+        '  README.md               "150 driver-races ... 232 ahead" (pace vs. finish, driver_performance + lap_pace)'
+    )
+    print('  README.md               "0.69 places ... 0.40" (strategy finding, race_strategy)')
+    print(
+        "  README.md / CLAUDE.md   dim_driver SCD-2 history (versions / drivers / historical rows) —"
+    )
     print("                          query: SELECT COUNT(*), COUNT(DISTINCT driver_id),")
-    print("                          SUM(CASE WHEN __END_AT IS NOT NULL THEN 1 ELSE 0 END) FROM f1.silver.dim_driver")
+    print(
+        "                          SUM(CASE WHEN __END_AT IS NOT NULL THEN 1 ELSE 0 END) FROM f1.silver.dim_driver"
+    )
 
     return 1 if fail else 0
 

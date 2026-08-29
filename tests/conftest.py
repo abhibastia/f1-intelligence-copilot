@@ -13,6 +13,7 @@ That split matters. Every Lakebase bug this suite covers was found by running
 the system, not by unit-testing it — so those tests exist to stop regressions,
 and they must not require the whole platform to be up in order to do that.
 """
+
 import os
 import sys
 
@@ -45,6 +46,7 @@ def lakebase():
     """Yield the schema module, or skip if Lakebase is not reachable."""
     try:
         from f1lake import schema
+
         schema.query("SELECT 1")
         return schema
     except Exception as exc:
@@ -70,6 +72,7 @@ def marker(lakebase):
     it.
     """
     import uuid as _uuid
+
     created: list[str] = []
 
     def _make(prefix: str) -> str:

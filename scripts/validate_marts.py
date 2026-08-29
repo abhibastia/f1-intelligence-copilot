@@ -19,7 +19,6 @@ result.
 """
 
 import argparse
-import sys
 
 from pyspark.sql import SparkSession
 
@@ -207,8 +206,7 @@ def main() -> int:
     for name, expectation, sql in CHECKS:
         rows = spark.sql(sql.format(c=args.catalog)).count()
         passed = (rows == 0) if expectation == "zero" else (rows > 0)
-        print(f"  {'PASS' if passed else 'FAIL'}  {name:48s} "
-              f"{rows} row(s), expected {expectation}")
+        print(f"  {'PASS' if passed else 'FAIL'}  {name:48s} {rows} row(s), expected {expectation}")
         if not passed:
             failures.append((name, rows, sql))
 
@@ -216,9 +214,17 @@ def main() -> int:
     # rows on clean Jolpica data — see check 6 in sql/validation_checks.sql —
     # so a threshold here would either be noise or a lie.
     print("\n  quarantine census")
-    for source in ("race", "result", "qualifying", "sprint_result",
-                   "driver_standing", "constructor_standing",
-                   "race_weather", "pit_stop", "lap"):
+    for source in (
+        "race",
+        "result",
+        "qualifying",
+        "sprint_result",
+        "driver_standing",
+        "constructor_standing",
+        "race_weather",
+        "pit_stop",
+        "lap",
+    ):
         table = f"{args.catalog}.silver.quarantine_{source}"
         try:
             print(f"    {source:22s} {spark.table(table).count()}")

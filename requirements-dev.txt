@@ -36,3 +36,8 @@ pg8000>=1.31
 # setup_secrets.py, f1lake.seed_gold's SQL Statement Execution API bridge, and
 # Lakebase secret resolution throughout.
 databricks-sdk>=0.30
+
+# Lint/format (pyproject.toml's [tool.ruff]) and its pre-commit runner.
+# `pip install -r requirements-dev.txt && pre-commit install` activates the hook.
+ruff>=0.16.5
+pre-commit>=4.0

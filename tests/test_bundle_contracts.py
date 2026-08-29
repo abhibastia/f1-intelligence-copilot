@@ -52,9 +52,7 @@ def test_resource_paths_exist(path):
         # `include` under a libraries glob ends in `**`; check the directory.
         target = value[:-3] if value.endswith("/**") else value
         resolved = (path.parent / target).resolve()
-        assert resolved.exists(), (
-            f"{path.name}: {key} -> {value} does not exist ({resolved})"
-        )
+        assert resolved.exists(), f"{path.name}: {key} -> {value} does not exist ({resolved})"
 
 
 @pytest.mark.parametrize("path", RESOURCE_FILES, ids=lambda p: p.name)
@@ -84,9 +82,7 @@ def test_resource_references_resolve():
             defined |= {f"{kind}.{name}" for name in items}
 
     for path in RESOURCE_FILES:
-        for kind, name in re.findall(
-            r"\$\{resources\.(\w+)\.(\w+)\.", path.read_text()
-        ):
+        for kind, name in re.findall(r"\$\{resources\.(\w+)\.(\w+)\.", path.read_text()):
             assert f"{kind}.{name}" in defined, (
                 f"{path.name} references {kind}.{name}, which no resource defines"
             )
@@ -95,5 +91,6 @@ def test_resource_references_resolve():
 def test_every_resource_file_is_included():
     """`include:` must actually reach the resources directory."""
     patterns = BUNDLE.get("include", [])
-    assert any("resources/" in p for p in patterns), \
+    assert any("resources/" in p for p in patterns), (
         "databricks.yml does not include resources/*.yml"
+    )

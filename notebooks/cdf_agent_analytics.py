@@ -65,7 +65,7 @@ KEY = dbutils.widgets.get("lakebase_secret_key")
 RAW = f"{CATALOG}.{SCHEMA}.agent_tool_calls"
 ANALYTICS = f"{CATALOG}.{SCHEMA}.agent_activity_analytics"
 
-print(f"source    : Lakebase agent_tool_calls")
+print("source    : Lakebase agent_tool_calls")
 print(f"delta     : {RAW}  (CDF enabled)")
 print(f"analytics : {ANALYTICS}")
 
@@ -86,18 +86,24 @@ from pg8000 import dbapi
 
 _parsed = urlparse(LAKEBASE_URL)
 conn = dbapi.connect(
-    host=_parsed.hostname, port=_parsed.port or 5432,
-    database=_parsed.path.lstrip("/"), user=_parsed.username,
-    password=_parsed.password, ssl_context=True,
+    host=_parsed.hostname,
+    port=_parsed.port or 5432,
+    database=_parsed.path.lstrip("/"),
+    user=_parsed.username,
+    password=_parsed.password,
+    ssl_context=True,
 )
 try:
     # pg8000 cursors don't support the context-manager protocol.
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT id, called_at, session_id, tool_name, is_write,
                arguments::text AS arguments, outcome, summary, duration_ms
         FROM agent_tool_calls ORDER BY id
-    """, ())
+    """,
+        (),
+    )
     columns = [d[0] for d in cur.description]
     rows = [dict(zip(columns, r)) for r in cur.fetchall()]
     cur.close()
@@ -110,20 +116,29 @@ print(f"{len(rows)} tool call(s) in Lakebase")
 
 # DBTITLE 1,Land them in a CDF-enabled Delta table
 from pyspark.sql import functions as F
-from pyspark.sql.types import (BooleanType, IntegerType, LongType, StringType,
-                               StructField, StructType, TimestampType)
+from pyspark.sql.types import (
+    BooleanType,
+    IntegerType,
+    LongType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
-SCHEMA_DDL = StructType([
-    StructField("id", LongType(), False),
-    StructField("called_at", TimestampType(), True),
-    StructField("session_id", StringType(), True),
-    StructField("tool_name", StringType(), False),
-    StructField("is_write", BooleanType(), True),
-    StructField("arguments", StringType(), True),
-    StructField("outcome", StringType(), True),
-    StructField("summary", StringType(), True),
-    StructField("duration_ms", IntegerType(), True),
-])
+SCHEMA_DDL = StructType(
+    [
+        StructField("id", LongType(), False),
+        StructField("called_at", TimestampType(), True),
+        StructField("session_id", StringType(), True),
+        StructField("tool_name", StringType(), False),
+        StructField("is_write", BooleanType(), True),
+        StructField("arguments", StringType(), True),
+        StructField("outcome", StringType(), True),
+        StructField("summary", StringType(), True),
+        StructField("duration_ms", IntegerType(), True),
+    ]
+)
 
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 
@@ -182,8 +197,10 @@ except Exception as exc:
     if "DELETED_FILE_RETENTION_DURATION" not in str(exc):
         raise
     current_version = spark.sql(f"DESCRIBE HISTORY {RAW}").selectExpr("max(version)").first()[0]
-    print(f"startingVersion=1 is past retention; falling back to the current "
-          f"version ({current_version}) as the new incremental starting point.")
+    print(
+        f"startingVersion=1 is past retention; falling back to the current "
+        f"version ({current_version}) as the new incremental starting point."
+    )
     changes = (
         spark.read.format("delta")
         .option("readChangeFeed", "true")
@@ -191,16 +208,17 @@ except Exception as exc:
         .table(RAW)
     )
 print(f"{changes.count()} change record(s) from the feed")
-display(changes.select("id", "tool_name", "outcome", "_change_type",
-                       "_commit_version").orderBy("_commit_version", "id").limit(20))
+display(
+    changes.select("id", "tool_name", "outcome", "_change_type", "_commit_version")
+    .orderBy("_commit_version", "id")
+    .limit(20)
+)
 
 # COMMAND ----------
 
 # Only rows that landed or were corrected. update_preimage is the "before"
 # image of an update and would double-count if left in.
-current = changes.filter(
-    F.col("_change_type").isin("insert", "update_postimage")
-)
+current = changes.filter(F.col("_change_type").isin("insert", "update_postimage"))
 
 # One record per tool call, not one per time it appeared in the feed.
 #
@@ -215,12 +233,9 @@ current = changes.filter(
 from pyspark.sql import Window
 
 latest_per_call = (
-    current
-    .withColumn(
+    current.withColumn(
         "_rn",
-        F.row_number().over(
-            Window.partitionBy("id").orderBy(F.col("_commit_version").desc())
-        ),
+        F.row_number().over(Window.partitionBy("id").orderBy(F.col("_commit_version").desc())),
     )
     .filter(F.col("_rn") == 1)
     .drop("_rn")

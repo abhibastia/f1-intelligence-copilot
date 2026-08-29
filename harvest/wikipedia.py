@@ -41,15 +41,20 @@ USER_AGENT = os.environ.get(
 )
 
 TIMEOUT = 30
-COURTESY_DELAY = 1.0   # 1 req/s sustained
+COURTESY_DELAY = 1.0  # 1 req/s sustained
 MAX_RETRIES = 5
 BACKOFF_BASE = 2.0
 
 # Sections that are navigation or bookkeeping rather than narrative. Embedding
 # these adds noise to every retrieval without adding meaning.
 SKIP_SECTIONS = {
-    "references", "external links", "see also", "notes", "further reading",
-    "bibliography", "sources",
+    "references",
+    "external links",
+    "see also",
+    "notes",
+    "further reading",
+    "bibliography",
+    "sources",
 }
 
 # Standings tables render as prose-free noise in explaintext output - long runs
@@ -71,7 +76,7 @@ def title_from_url(url: str) -> str:
     path = urlparse(url).path
     if not path.startswith("/wiki/"):
         raise WikipediaError(f"Not a Wikipedia article URL: {url!r}")
-    return unquote(path[len("/wiki/"):]).replace("_", " ")
+    return unquote(path[len("/wiki/") :]).replace("_", " ")
 
 
 def fetch_extract(title: str, session: requests.Session | None = None) -> str:
@@ -84,25 +89,37 @@ def fetch_extract(title: str, session: requests.Session | None = None) -> str:
     """
     session = session or requests.Session()
     params = {
-        "action": "query", "format": "json", "prop": "extracts",
-        "explaintext": 1, "redirects": 1, "titles": title,
+        "action": "query",
+        "format": "json",
+        "prop": "extracts",
+        "explaintext": 1,
+        "redirects": 1,
+        "titles": title,
     }
 
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
             response = session.get(
-                API_URL, params=params,
-                headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT,
+                API_URL,
+                params=params,
+                headers={"User-Agent": USER_AGENT},
+                timeout=TIMEOUT,
             )
             if response.status_code in (429, 503):
                 retry_after = response.headers.get("Retry-After")
                 wait = (
-                    float(retry_after) if retry_after and retry_after.isdigit()
-                    else BACKOFF_BASE ** attempt + random.uniform(0, 1)
+                    float(retry_after)
+                    if retry_after and retry_after.isdigit()
+                    else BACKOFF_BASE**attempt + random.uniform(0, 1)
                 )
-                logger.warning("  throttled (%s), waiting %.1fs [attempt %d/%d]",
-                               response.status_code, wait, attempt + 1, MAX_RETRIES)
+                logger.warning(
+                    "  throttled (%s), waiting %.1fs [attempt %d/%d]",
+                    response.status_code,
+                    wait,
+                    attempt + 1,
+                    MAX_RETRIES,
+                )
                 time.sleep(wait)
                 last_error = f"HTTP {response.status_code}"
                 continue
@@ -111,7 +128,7 @@ def fetch_extract(title: str, session: requests.Session | None = None) -> str:
             break
         except requests.RequestException as exc:
             last_error = str(exc)
-            time.sleep(BACKOFF_BASE ** attempt + random.uniform(0, 1))
+            time.sleep(BACKOFF_BASE**attempt + random.uniform(0, 1))
         except ValueError:
             raise WikipediaError(f"Wikipedia returned non-JSON for {title!r}")
     else:
@@ -209,17 +226,28 @@ def fetch_and_store(races, store, sleep: float = COURTESY_DELAY) -> dict:
             done += 1
             logger.info(
                 "[%d/%d] %s %s — %d sections, %d chars, stored",
-                i, len(races), race.season, race.race_name,
-                len(report["sections"]), report["total_chars"],
+                i,
+                len(races),
+                race.season,
+                race.race_name,
+                len(report["sections"]),
+                report["total_chars"],
             )
         except WikipediaError as exc:
             failed += 1
-            logger.warning("[%d/%d] %s %s — FAILED: %s",
-                           i, len(races), race.season, race.race_name, exc)
+            logger.warning(
+                "[%d/%d] %s %s — FAILED: %s", i, len(races), race.season, race.race_name, exc
+            )
         except Exception as exc:
             failed += 1
-            logger.warning("[%d/%d] %s %s — fetched but not stored: %s",
-                           i, len(races), race.season, race.race_name, exc)
+            logger.warning(
+                "[%d/%d] %s %s — fetched but not stored: %s",
+                i,
+                len(races),
+                race.season,
+                race.race_name,
+                exc,
+            )
         time.sleep(sleep)
     return {"fetched": done, "failed": failed}
 
@@ -239,13 +267,24 @@ def fetch_many(races, sleep: float = COURTESY_DELAY) -> tuple[list[dict], list[d
             reports.append(report)
             logger.info(
                 "[%d/%d] %s %s — %d sections, %d chars",
-                i, len(races), race.season, race.race_name,
-                len(report["sections"]), report["total_chars"],
+                i,
+                len(races),
+                race.season,
+                race.race_name,
+                len(report["sections"]),
+                report["total_chars"],
             )
         except WikipediaError as exc:
-            failures.append({"season": race.season, "round": race.round,
-                             "race_name": race.race_name, "error": str(exc)})
-            logger.warning("[%d/%d] %s %s — FAILED: %s",
-                           i, len(races), race.season, race.race_name, exc)
+            failures.append(
+                {
+                    "season": race.season,
+                    "round": race.round,
+                    "race_name": race.race_name,
+                    "error": str(exc),
+                }
+            )
+            logger.warning(
+                "[%d/%d] %s %s — FAILED: %s", i, len(races), race.season, race.race_name, exc
+            )
         time.sleep(sleep)
     return reports, failures

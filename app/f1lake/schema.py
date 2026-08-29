@@ -34,9 +34,9 @@ unchanged; only this module's connection and cursor handling differ.
 import base64
 import os
 from contextlib import contextmanager
+from urllib.parse import urlparse
 
 from pg8000 import dbapi
-from urllib.parse import urlparse
 
 _SCOPE = os.environ.get("LAKEBASE_SECRET_SCOPE", "database")
 _KEY = os.environ.get("LAKEBASE_SECRET_KEY", "lakebase-url")
@@ -132,8 +132,11 @@ def cursor(conn):
 def connection():
     url = urlparse(lakebase_url())
     conn = dbapi.connect(
-        host=url.hostname, port=url.port or 5432,
-        database=url.path.lstrip("/"), user=url.username, password=url.password,
+        host=url.hostname,
+        port=url.port or 5432,
+        database=url.path.lstrip("/"),
+        user=url.username,
+        password=url.password,
         ssl_context=True,
     )
     try:
@@ -172,10 +175,15 @@ def returning(sql: str, params: tuple | dict | None = None) -> list[dict]:
         return rows
 
 
-def log_tool_call(tool_name: str, arguments: dict, outcome: str,
-                  is_write: bool = False, summary: str | None = None,
-                  duration_ms: int | None = None,
-                  session_id: str | None = None) -> None:
+def log_tool_call(
+    tool_name: str,
+    arguments: dict,
+    outcome: str,
+    is_write: bool = False,
+    summary: str | None = None,
+    duration_ms: int | None = None,
+    session_id: str | None = None,
+) -> None:
     """Record one agent tool call. Never raises.
 
     This is the source of the Change Data Feed loop: rows land here, CDF carries
@@ -187,6 +195,7 @@ def log_tool_call(tool_name: str, arguments: dict, outcome: str,
     logging write failed is strictly worse than one with a gap in its logs.
     """
     import json as _json
+
     try:
         with connection() as conn:
             cur = conn.cursor()
@@ -195,16 +204,24 @@ def log_tool_call(tool_name: str, arguments: dict, outcome: str,
                     (session_id, tool_name, is_write, arguments, outcome,
                      summary, duration_ms)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (session_id, tool_name, is_write,
-                 _json.dumps(arguments, default=str), outcome,
-                 summary, duration_ms),
+                (
+                    session_id,
+                    tool_name,
+                    is_write,
+                    _json.dumps(arguments, default=str),
+                    outcome,
+                    summary,
+                    duration_ms,
+                ),
             )
             conn.commit()
             cur.close()
     except Exception:
         import logging as _logging
+
         _logging.getLogger("schema").warning(
-            "tool-call logging failed; the tool itself was unaffected", exc_info=True)
+            "tool-call logging failed; the tool itself was unaffected", exc_info=True
+        )
 
 
 def execute(sql: str, params: tuple | dict | None = None) -> int:
@@ -217,8 +234,9 @@ def execute(sql: str, params: tuple | dict | None = None) -> int:
         return rowcount
 
 
-def execute_values(cur, sql: str, argslist: list[tuple], template: str | None = None,
-                   page_size: int = 100) -> None:
+def execute_values(
+    cur, sql: str, argslist: list[tuple], template: str | None = None, page_size: int = 100
+) -> None:
     """Batch-insert many rows in one statement each, psycopg2.extras.execute_values'
     call shape - `sql` contains a literal `VALUES %s` that gets expanded to
     `VALUES (%s,...),(%s,...),...` per page, with `template` overriding the
@@ -234,7 +252,7 @@ def execute_values(cur, sql: str, argslist: list[tuple], template: str | None = 
         raise ValueError("execute_values() requires a literal VALUES %s in sql")
 
     for start in range(0, len(argslist), page_size):
-        page = argslist[start:start + page_size]
+        page = argslist[start : start + page_size]
         if template:
             group = template
         else:
@@ -253,7 +271,6 @@ DDL = [
     # pgvector but no unaccent: the app would deploy, look healthy, and fail
     # every single tool call that resolves a name.
     "CREATE EXTENSION IF NOT EXISTS unaccent",
-
     # --- reference: the race spine, mirrored from Gold ------------------------
     f"""
     CREATE TABLE IF NOT EXISTS {RACES} (
@@ -270,7 +287,6 @@ DDL = [
         PRIMARY KEY (season, round)
     )
     """,
-
     # --- unstructured: race reports ------------------------------------------
     f"""
     CREATE TABLE IF NOT EXISTS {DOCUMENTS} (
@@ -289,7 +305,6 @@ DDL = [
     )
     """,
     f"CREATE INDEX IF NOT EXISTS idx_{DOCUMENTS}_race ON {DOCUMENTS} (season, round)",
-
     f"""
     CREATE TABLE IF NOT EXISTS {EMBEDDINGS} (
         id          TEXT PRIMARY KEY,
@@ -312,7 +327,6 @@ DDL = [
     # query time - an index built with a different opclass is silently ignored.
     f"CREATE INDEX IF NOT EXISTS idx_{EMBEDDINGS}_hnsw "
     f"ON {EMBEDDINGS} USING hnsw (embedding vector_cosine_ops)",
-
     # --- measured race-day weather -------------------------------------------
     f"""
     CREATE TABLE IF NOT EXISTS {WEATHER} (
@@ -337,7 +351,6 @@ DDL = [
         PRIMARY KEY (season, round)
     )
     """,
-
     # --- agent WRITE targets --------------------------------------------------
     f"""
     CREATE TABLE IF NOT EXISTS {WATCHLIST} (
@@ -374,7 +387,6 @@ DDL = [
     )
     """,
     f"CREATE INDEX IF NOT EXISTS idx_{NOTES}_race ON {NOTES} (season, round)",
-
     # --- strategy: pit stops and reconstructed stints -------------------------
     f"""
     CREATE TABLE IF NOT EXISTS {PIT_STOPS} (
@@ -389,7 +401,6 @@ DDL = [
     )
     """,
     f"CREATE INDEX IF NOT EXISTS idx_{PIT_STOPS}_race ON {PIT_STOPS} (season, round)",
-
     f"""
     CREATE TABLE IF NOT EXISTS {STINTS} (
         season       INT NOT NULL,
@@ -405,7 +416,6 @@ DDL = [
     )
     """,
     f"CREATE INDEX IF NOT EXISTS idx_{STINTS}_race ON {STINTS} (season, round)",
-
     # --- agent telemetry: the CDF source -------------------------------------
     # Every tool call the agent makes lands here. Change Data Feed carries these
     # rows into a Delta analytics table (see notebooks/cdf_agent_analytics.py),
@@ -480,9 +490,9 @@ def smoke_test() -> int:
     season, rnd = race[0]["season"], race[0]["round"]
 
     rows = returning(
-        f"INSERT INTO {NOTES} (user_id, season, round, note) "
-        f"VALUES (%s, %s, %s, %s) RETURNING id",
-        ("smoke-test", season, rnd, marker))
+        f"INSERT INTO {NOTES} (user_id, season, round, note) VALUES (%s, %s, %s, %s) RETURNING id",
+        ("smoke-test", season, rnd, marker),
+    )
     new_id = rows[0]["id"]
     print(f"  wrote          … id {new_id}")
 
@@ -505,11 +515,16 @@ def _main() -> int:
 
     parser = argparse.ArgumentParser(
         prog="python -m f1lake.schema",
-        description="Create the Lakebase tables, or check the write path works.")
-    parser.add_argument("--ensure", action="store_true",
-                        help="create every table and index (idempotent)")
-    parser.add_argument("--smoke", action="store_true",
-                        help="write one row, read it back on a new connection, delete it")
+        description="Create the Lakebase tables, or check the write path works.",
+    )
+    parser.add_argument(
+        "--ensure", action="store_true", help="create every table and index (idempotent)"
+    )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="write one row, read it back on a new connection, delete it",
+    )
     args = parser.parse_args()
 
     if not (args.ensure or args.smoke):
@@ -522,8 +537,10 @@ def _main() -> int:
             SELECT (SELECT count(*) FROM f1_races)      AS races,
                    (SELECT count(*) FROM f1_documents)  AS documents,
                    (SELECT count(*) FROM f1_embeddings) AS embeddings""")[0]
-        print(f"  schema ensured … {counts['races']} races, "
-              f"{counts['documents']} documents, {counts['embeddings']} embeddings")
+        print(
+            f"  schema ensured … {counts['races']} races, "
+            f"{counts['documents']} documents, {counts['embeddings']} embeddings"
+        )
     if args.smoke:
         return smoke_test()
     return 0

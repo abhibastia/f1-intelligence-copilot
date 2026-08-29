@@ -1,9 +1,10 @@
 """Parsing and chunking - the pure logic, and the bugs that hid in it."""
+
 import pytest
 
 from f1lake.load import chunk_text, disambiguate, document_id
 from f1lake.load_strategy import parse_duration
-from harvest.wikipedia import split_sections, title_from_url, WikipediaError
+from harvest.wikipedia import WikipediaError, split_sections, title_from_url
 
 # The WMO-code / wet-threshold parsing this file used to test here lived in
 # harvest/weather.py, a second independent Open-Meteo fetch. Merging with
@@ -66,20 +67,21 @@ class TestSectionDisambiguation:
     """
 
     def test_unique_names_are_untouched(self):
-        out = disambiguate([{"section": "Race", "text": "a"},
-                            {"section": "Qualifying", "text": "b"}])
+        out = disambiguate(
+            [{"section": "Race", "text": "a"}, {"section": "Qualifying", "text": "b"}]
+        )
         assert [name for name, _ in out] == ["Race", "Qualifying"]
 
     def test_repeated_name_is_suffixed_not_dropped(self):
-        out = disambiguate([{"section": "Race", "text": "first"},
-                            {"section": "Race", "text": "second"}])
+        out = disambiguate(
+            [{"section": "Race", "text": "first"}, {"section": "Race", "text": "second"}]
+        )
         assert [name for name, _ in out] == ["Race", "Race (2)"]
         # Both bodies survive - they are different text.
         assert [body for _, body in out] == ["first", "second"]
 
     def test_disambiguated_ids_are_unique(self):
-        out = disambiguate([{"section": "Race", "text": "a"},
-                            {"section": "Race", "text": "b"}])
+        out = disambiguate([{"section": "Race", "text": "a"}, {"section": "Race", "text": "b"}])
         ids = {document_id(2025, 22, name) for name, _ in out}
         assert len(ids) == 2
 
@@ -89,9 +91,10 @@ class TestSectionDisambiguation:
 
 class TestWikipediaParsing:
     def test_title_from_url(self):
-        assert title_from_url(
-            "https://en.wikipedia.org/wiki/2024_S%C3%A3o_Paulo_Grand_Prix"
-        ) == "2024 São Paulo Grand Prix"
+        assert (
+            title_from_url("https://en.wikipedia.org/wiki/2024_S%C3%A3o_Paulo_Grand_Prix")
+            == "2024 São Paulo Grand Prix"
+        )
 
     def test_non_article_url_rejected(self):
         with pytest.raises(WikipediaError):
@@ -104,12 +107,14 @@ class TestWikipediaParsing:
 
     def test_noise_sections_are_dropped(self):
         sections = split_sections(
-            "Lead.\n\n== Race report ==\nBody.\n\n== References ==\n[1] cite\n")
+            "Lead.\n\n== Race report ==\nBody.\n\n== References ==\n[1] cite\n"
+        )
         assert "References" not in [n for n, _ in sections]
 
     def test_standings_tables_are_dropped(self):
         sections = split_sections(
-            "Lead.\n\n== Championship standings after the race ==\n1 VER 400\n")
+            "Lead.\n\n== Championship standings after the race ==\n1 VER 400\n"
+        )
         assert not any("standings" in n.lower() for n, _ in sections)
 
 
@@ -120,10 +125,18 @@ class TestErrorMessagesAreSafe:
 
     def test_database_errors_do_not_leak_the_connection_target(self):
         from pg8000 import dbapi
+
         from f1lake import schema
+
         try:
-            dbapi.connect(host="secret-host.example.com", port=5432, database="db",
-                          user="someuser", password="hunter2", timeout=1)
+            dbapi.connect(
+                host="secret-host.example.com",
+                port=5432,
+                database="db",
+                user="someuser",
+                password="hunter2",
+                timeout=1,
+            )
             raise AssertionError("expected the connection to fail")
         except dbapi.Error as exc:
             safe = schema.safe_message(exc)
@@ -136,10 +149,16 @@ class TestErrorMessagesAreSafe:
         phrased for a reader - replacing them would make the agent less able to
         explain itself, not more secure."""
         from f1lake import schema
-        assert schema.safe_message(
-            ValueError('No race matched "Foo" in 2024.')) == 'No race matched "Foo" in 2024.'
+
+        assert (
+            schema.safe_message(ValueError('No race matched "Foo" in 2024.'))
+            == 'No race matched "Foo" in 2024.'
+        )
 
     def test_unexpected_types_are_replaced(self):
         from f1lake import schema
-        assert schema.safe_message(RuntimeError("/etc/secrets/token: permission denied")) \
+
+        assert (
+            schema.safe_message(RuntimeError("/etc/secrets/token: permission denied"))
             == "The request could not be completed."
+        )

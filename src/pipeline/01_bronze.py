@@ -85,9 +85,11 @@ def _bronze_table(endpoint: str):
             F.col("_metadata.file_modification_time").alias("_file_modified_at"),
         )
 
-        return df.withColumn(
-            "_ingest_ts", F.to_timestamp("_ingest_ts_str")
-        ).withColumn("_ingested_at", F.current_timestamp()).drop("_ingest_ts_str")
+        return (
+            df.withColumn("_ingest_ts", F.to_timestamp("_ingest_ts_str"))
+            .withColumn("_ingested_at", F.current_timestamp())
+            .drop("_ingest_ts_str")
+        )
 
     return _table
 

@@ -14,6 +14,22 @@ one system: a governed medallion pipeline (dashboard and Genie —
 [`docs/architecture.md`](docs/architecture.md)) and a Lakebase-backed strategy
 copilot (retrieval and agent — [`docs/copilot_design.md`](docs/copilot_design.md)).
 
+Both apps run behind Databricks OAuth on Free Edition, so there's no public
+URL to click through — these are what they look like running:
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/app-finding.png" alt="Strategy Copilot: the wet-race-vs-wet-day finding, with the chat rail answering a question about the 2024 São Paulo Grand Prix" width="100%"><br><sub>The finding — RAG grounded in race-report prose, cited inline</sub></td>
+<td width="50%"><img src="docs/screenshots/app-season-explorer.png" alt="Strategy Copilot: 2026 Season Explorer table with weather populated for every completed round" width="100%"><br><sub>Season Explorer — governed Gold marts, served from Lakebase</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/app-saved-items.png" alt="Strategy Copilot: watchlist, predictions and race notes the agent saved during chat" width="100%"><br><sub>What it saved — watchlist, predictions, notes, all written by the agent's own tools</sub></td>
+<td width="50%"><img src="docs/screenshots/dashboard-championship.png" alt="AI/BI dashboard: Championship Swing decision page" width="100%"><br><sub>AI/BI Dashboard — Championship Swing, one of 7 decision pages over Gold</sub></td>
+</tr>
+</table>
+
+<img src="docs/screenshots/dashboard-activity.png" alt="AI/BI dashboard: Assistant Activity page, tool calls and errors fed by the Change Data Feed loop" width="100%"><br><sub>Assistant Activity — every tool call the copilot makes, carried into Delta via Change Data Feed and surfaced back in the dashboard</sub>
+
 ---
 
 ## 1. What it does and why

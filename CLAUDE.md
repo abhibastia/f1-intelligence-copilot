@@ -1,10 +1,10 @@
 # F1 Intelligence Copilot — working constraints
 
-Merged from two Databricks Free Edition capstones — formula1-capstone-project
-(the governed medallion pipeline) and f1-strategy-copilot (the Lakebase / RAG /
-agent layer). This file holds the decisions that are expensive to rediscover,
-from both halves. `docs/architecture.md` is the pipeline design record;
-`docs/copilot_design.md` is the agent/RAG design record.
+Originally two separate projects — a governed medallion pipeline and a
+Lakebase / RAG / agent layer — later merged into one platform. This file holds
+the decisions that are expensive to rediscover, from both halves.
+`docs/architecture.md` is the pipeline design record; `docs/copilot_design.md`
+is the agent/RAG design record.
 
 ## Environment
 

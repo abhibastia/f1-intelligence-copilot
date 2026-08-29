@@ -9,10 +9,10 @@ AI/BI dashboard, a Genie natural-language space over Gold, and a chat copilot
 backed by Lakebase Postgres with retrieval over race-report prose and a set of
 read/write agent tools exposed over MCP.
 
-This repository merges two Databricks Free Edition capstones —
-[`formula1-capstone-project`](docs/architecture.md) (the governed medallion
-pipeline, dashboard and Genie) and [`f1-strategy-copilot`](docs/copilot_design.md)
-(the Lakebase serving layer, retrieval and agent).
+This platform grew from two originally-separate projects, later merged into
+one system: a governed medallion pipeline (dashboard and Genie —
+[`docs/architecture.md`](docs/architecture.md)) and a Lakebase-backed strategy
+copilot (retrieval and agent — [`docs/copilot_design.md`](docs/copilot_design.md)).
 
 ---
 
@@ -126,25 +126,25 @@ than a per-turn cost.
 
 ## 3. Repository layout
 
-| Path | What | From |
+| Path | What | Layer |
 |---|---|---|
-| `src/ingestion/`, `src/pipeline/` | **Governed Spark medallion**: ingestion, Bronze→Gold (6 marts), SCD-2 | capstone |
-| `sql/` | Validation checks, data-quality event-log queries, the `driver_metrics` metric view | capstone |
-| `dashboards/` | AI/BI dashboard definition — 7 decision pages | capstone |
-| `genie/` | Genie space scoped to Gold + the metric view | capstone |
-| `docs/architecture.md` | Pipeline design record and data dictionary | capstone |
-| `docs/copilot_design.md` | Agent/RAG design record | copilot |
-| `docs/runbook.md` | Operations and failure modes | capstone |
-| `harvest/` | Wikipedia race reports — runs as a Databricks job (`jobs/run_harvest.py`) or locally for testing | copilot |
-| `f1lake/` | Lakebase schema, loaders, embedding, Gold→Lakebase seeding | copilot |
-| `jobs/` | Databricks job entry points for harvest, embed, seed_gold | copilot |
-| `mcp_server/` | MCP server app — 20 tools over streamable HTTP | copilot |
-| `app/` | Strategy Copilot app — frontend, in-process agent, dashboards | copilot |
-| `notebooks/` | CDF→Delta analytics job | copilot |
-| `resources/`, `databricks.yml` | One merged Asset Bundle: pipeline, jobs, dashboard | both |
-| `scripts/` | Catalog provisioning, access control, bootstrap, app build, validation | both |
-| `tests/` | Pipeline contract tests, agent/resolution tests, bundle checks | both |
-| `data/` | Harvested source data (gitignored except demo transcripts) | both |
+| `src/ingestion/`, `src/pipeline/` | **Governed Spark medallion**: ingestion, Bronze→Gold (6 marts), SCD-2 | Pipeline |
+| `sql/` | Validation checks, data-quality event-log queries, the `driver_metrics` metric view | Pipeline |
+| `dashboards/` | AI/BI dashboard definition — 7 decision pages | Pipeline |
+| `genie/` | Genie space scoped to Gold + the metric view | Pipeline |
+| `docs/architecture.md` | Pipeline design record and data dictionary | Pipeline |
+| `docs/copilot_design.md` | Agent/RAG design record | Copilot |
+| `docs/runbook.md` | Operations and failure modes | Pipeline |
+| `harvest/` | Wikipedia race reports — runs as a Databricks job (`jobs/run_harvest.py`) or locally for testing | Copilot |
+| `f1lake/` | Lakebase schema, loaders, embedding, Gold→Lakebase seeding | Copilot |
+| `jobs/` | Databricks job entry points for harvest, embed, seed_gold | Copilot |
+| `mcp_server/` | MCP server app — 20 tools over streamable HTTP | Copilot |
+| `app/` | Strategy Copilot app — frontend, in-process agent, dashboards | Copilot |
+| `notebooks/` | CDF→Delta analytics job | Copilot |
+| `resources/`, `databricks.yml` | One Asset Bundle: pipeline, jobs, dashboard | Shared |
+| `scripts/` | Catalog provisioning, access control, bootstrap, app build, validation | Shared |
+| `tests/` | Pipeline contract tests, agent/resolution tests, bundle checks | Shared |
+| `data/` | Harvested source data (gitignored except demo transcripts) | Shared |
 
 ---
 
@@ -237,6 +237,20 @@ handful of API calls, not hundreds.
 
 To backfill locally instead: `python3 src/ingestion/ingest.py --mode backfill
 --root ./landing`, then `./scripts/upload_landing.sh`.
+
+After changing pipeline code, run the gated version instead of the two
+`bundle run` lines above — it brackets the same ingest + pipeline work with a
+unit-test task before and `validate_marts.py` after, so a typo fails in
+seconds rather than after a cluster start, and "the update completed" only
+counts once the marts actually reconcile:
+
+```bash
+databricks bundle run f1_end_to_end -t dev --profile <profile>
+```
+
+Deliberately unscheduled — see `resources/f1_end_to_end.job.yml` — it costs
+roughly twice the daily quota of `f1_ingest_incremental`, so it runs on
+request, not on a schedule.
 
 ### Steps 2–3 — Harvest, embed and seed Lakebase (on Databricks)
 

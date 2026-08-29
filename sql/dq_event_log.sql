@@ -4,8 +4,8 @@
 -- the `event_log` block in the pipeline config). Expectation results arrive as
 -- JSON inside the `details` column under flow_progress.data_quality.expectations.
 --
--- These queries are the evidence for MVP item 5: data quality is not just
--- enforced, it is measurable.
+-- These queries are the evidence that data quality is not just enforced, it
+-- is measurable.
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- 1. Expectation pass/fail counts per dataset per run.

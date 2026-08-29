@@ -575,7 +575,7 @@ def constructor_standings(season: int, round_: int | None = None) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Writes — the capstone's "agent takes real actions" requirement
+# Writes — the agent takes real actions, not just reads
 # --------------------------------------------------------------------------
 
 def add_watchlist(entity_type: str, entity_ref: str, note: str | None = None,

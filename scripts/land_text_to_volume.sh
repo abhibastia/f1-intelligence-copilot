@@ -11,9 +11,14 @@
 # This puts the raw text in the Volume where the rest of the raw data lives, so
 # the lakehouse holds every source in its original form and a pipeline stage can
 # consume it later. It uses the Files API - no compute.
-set -euo pipefail
-PROFILE="${1:-abhi}"
-VOL="dbfs:/Volumes/f1/raw/landing"
+#
+# Usage:
+#     ./scripts/land_text_to_volume.sh --profile <name>
+
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+preflight "$@"
+
+VOL="dbfs:${VOLUME_PATH}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "Landing text sources into $VOL"

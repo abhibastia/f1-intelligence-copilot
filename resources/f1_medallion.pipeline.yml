@@ -20,10 +20,10 @@ resources:
       continuous: false
       # CURRENT, not PREVIEW. PREVIEW serves the *next* runtime, so the engine
       # under this pipeline changes on Databricks' release schedule rather than
-      # ours — a behaviour change during grading week would show up as a
-      # failure in a pipeline whose code has not been touched in a month, with
-      # nothing in git to explain it. CURRENT trades early features, none of
-      # which this pipeline uses, for a runtime that only moves when we say so.
+      # ours — an engine change would show up as a failure in a pipeline whose
+      # code has not been touched in a month, with nothing in git to explain
+      # it. CURRENT trades early features, none of which this pipeline uses,
+      # for a runtime that only moves when we say so.
       channel: CURRENT
 
       configuration:

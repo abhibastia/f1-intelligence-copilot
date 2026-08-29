@@ -1,12 +1,12 @@
 # The Strategy Copilot — Design
 
 > This is the design record for the **agent / RAG / Lakebase half** of F1
-> Intelligence Copilot, carried over from the standalone f1-strategy-copilot
-> project it was merged from. `docs/architecture.md` is the design record for
-> the **governed medallion pipeline half**, from formula1-capstone-project.
-> Everything below is otherwise unchanged from the standalone project: the
-> two-store split, the retrieval design and the reasoning about why the
-> embeddings are load-bearing all still hold exactly as written.
+> Intelligence Copilot, originally a separate project later merged into this
+> platform. `docs/architecture.md` is the design record for the **governed
+> medallion pipeline half**. Everything below is otherwise unchanged from the
+> original design: the two-store split, the retrieval design and the
+> reasoning about why the embeddings are load-bearing all still hold exactly
+> as written.
 
 ## 1. The problem
 
@@ -130,8 +130,8 @@ Every agent tool call is recorded in Lakebase. Change Data Feed carries those
 changes into a Delta analytics table, and the app reads it back to show which
 tools get used, how often writes happen, and how long calls take.
 
-This closes the loop the rubric asks for: **operational writes → CDF → Delta
-analytics → surfaced in the app.** It is also genuinely useful — it is the only
+This closes the loop this design set out to prove: **operational writes → CDF
+→ Delta analytics → surfaced in the app.** It is also genuinely useful — it is the only
 way to see what the agent is actually doing rather than what it claims.
 
 ## 8. Data model

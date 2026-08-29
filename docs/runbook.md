@@ -226,6 +226,11 @@ for e in json.load(sys.stdin):
         break"
 ```
 
+`scripts/run_pipeline.sh <pipeline_id> --profile <profile>` wraps this whole
+loop end to end — starts an update, polls *that update* (not the pipeline,
+which flips back to RUNNING on retry) to a terminal state, and prints the real
+error on failure.
+
 ### Every row in a fact went to quarantine
 
 Almost always a schema mismatch, not bad data. Check `_quarantine_reason`: if

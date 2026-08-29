@@ -17,18 +17,17 @@ serving layer.
 
 SIX MARTS, NOT TWO
 -------------------
-The standalone f1-strategy-copilot project only seeded driver_performance and
+The Lakebase side originally only seeded driver_performance and
 championship_progression, then filled the gap for weather and strategy with a
 second, independent local pipeline: harvest/weather.py called Open-Meteo again,
 and f1lake/load_strategy.py re-derived stints from raw pit-stop JSON. Both were
-real duplication of what the Spark pipeline (inherited from the merged
-formula1-capstone-project) already computes, quality-checks and materialises as
-Gold: race_conditions (weather, with outcome context) and race_strategy
-(stops/stints with field comparison). Weather is now seeded straight from
-race_conditions via `seed_weather()` below, which is why harvest/weather.py no
-longer exists. race_strategy, lap_pace and constructor_standings are new
-capability the standalone copilot never had at all - see f1_broker.race_pace and
-f1_broker.constructor_standings.
+real duplication of what the governed Spark pipeline already computes,
+quality-checks and materialises as Gold: race_conditions (weather, with
+outcome context) and race_strategy (stops/stints with field comparison).
+Weather is now seeded straight from race_conditions via `seed_weather()`
+below, which is why harvest/weather.py no longer exists. race_strategy,
+lap_pace and constructor_standings are capability the Lakebase side never had
+before this merge - see f1_broker.race_pace and f1_broker.constructor_standings.
 
 The per-stint STINTS/PIT_STOPS pair (f1lake/load_strategy.py) is NOT
 superseded: race_strategy's grain is driver x race (stop counts, field

@@ -6,8 +6,8 @@ from f1lake.load_strategy import parse_duration
 from harvest.wikipedia import split_sections, title_from_url, WikipediaError
 
 # The WMO-code / wet-threshold parsing this file used to test here lived in
-# harvest/weather.py, a second independent Open-Meteo fetch. Merging with
-# formula1-capstone-project removed it: weather is now seeded from the
+# harvest/weather.py, a second independent Open-Meteo fetch. Consolidating
+# onto the governed Spark pipeline removed it: weather is now seeded from the
 # governed f1.gold.race_conditions mart (src/pipeline/02b_silver_weather.py
 # computes the same WET_THRESHOLD_MM = 1.0 and WMO-code CONDITIONS mapping in
 # Spark, covered by that pipeline's own tests) rather than fetched twice.

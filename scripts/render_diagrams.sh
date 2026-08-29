@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Render the mermaid diagrams in README.md and DESIGN.md to PNG.
+# Render the mermaid diagrams in README.md and docs/*.md to PNG.
 #
-# Mermaid renders on GitHub, but not in a plain editor or in the markdown as it
-# sits inside a submission archive - so a reader who opens README.md as a file
-# sees a code block where the architecture should be. These PNGs are that
-# fallback.
+# Mermaid renders on GitHub, but not in a plain editor - so a reader who opens
+# README.md as a plain file sees a code block where the architecture should
+# be. These PNGs are that fallback.
 #
 # Generated rather than screenshotted: the source stays the markdown, so the
 # images cannot drift from it, and there is no browser chrome or scaling loss.
@@ -32,5 +31,6 @@ PY
   echo "  $OUT/$name.png"
 }
 
-render README.md architecture-system   2200
-render DESIGN.md architecture-dataflow 1600
+render README.md              architecture-system  2200
+render docs/architecture.md   architecture-pipeline 1600
+render docs/copilot_design.md architecture-copilot  1600

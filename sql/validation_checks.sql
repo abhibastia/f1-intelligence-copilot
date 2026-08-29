@@ -41,8 +41,8 @@ ORDER BY ABS(delta) DESC;
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- 2. SCD-2 history exists. MUST return rows.
---    An empty result means dim_driver has no versioning and MVP item 3 is
---    NOT met, regardless of the pattern being implemented.
+--    An empty result means dim_driver has no real versioning, regardless of
+--    whether the SCD-2 pattern is nominally implemented.
 -- ─────────────────────────────────────────────────────────────────────────
 SELECT
   driver_id,
@@ -102,8 +102,10 @@ ORDER BY season;
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- 6. Quarantine census. NOT expected to be empty — three sources reject rows
---    on real Jolpica data, and the counts are the point:
---      lap             ~69  plausible_lap_time — laps outside 40-300 s, i.e.
+--    on real Jolpica data, and the counts are the point. Baseline below is
+--    for 2024-2026 (60 rounds landed); scale roughly with rounds landed as
+--    more seasons are added:
+--      lap             ~89  plausible_lap_time — laps outside 40-300 s, i.e.
 --                           red-flag and safety-car-delta laps. Dropping them
 --                           is what keeps the pace mart about racing.
 --      driver_standing  ~8  position_present — standings rows the feed
@@ -111,8 +113,8 @@ ORDER BY season;
 --      pit_stop         ~2  duration_parsed — stops published with an empty
 --                           duration. Check 11 proves those are the same two
 --                           stops that leave a gap in the stop numbering.
---    A number moving a long way from these is the signal; zero everywhere
---    would mean the expectations stopped being evaluated.
+--    A number moving a long way off the per-round rate is the signal; zero
+--    everywhere would mean the expectations stopped being evaluated.
 -- ─────────────────────────────────────────────────────────────────────────
 SELECT 'race'                 AS source, COUNT(*) AS quarantined FROM f1.silver.quarantine_race
 UNION ALL SELECT 'result',                COUNT(*) FROM f1.silver.quarantine_result

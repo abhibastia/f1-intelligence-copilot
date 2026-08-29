@@ -98,7 +98,7 @@ def fetch_race_weather(
     _budget.acquire()
     try:
         request = urllib.request.Request(
-            url, headers={"User-Agent": "f1-capstone-pipeline/1.0"}
+            url, headers={"User-Agent": "f1-intelligence-copilot/1.0"}
         )
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))

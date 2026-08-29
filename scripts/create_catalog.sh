@@ -38,7 +38,7 @@ if catalog_exists; then
 else
   # Path 1 — plain CLI create.
   if databricks catalogs create "$CATALOG" \
-       --comment "Formula 1 Race Intelligence capstone" \
+       --comment "Formula 1 Race Intelligence platform" \
        --profile "$PROFILE" >/dev/null 2>&1; then
     ok "created via CLI"
   else
@@ -56,7 +56,7 @@ for c in json.load(sys.stdin):
 ' || true)
 
     if [[ -n "$STORAGE_ROOT" ]] && databricks catalogs create "$CATALOG" \
-         --comment "Formula 1 Race Intelligence capstone" \
+         --comment "Formula 1 Race Intelligence platform" \
          --storage-root "$STORAGE_ROOT" \
          --profile "$PROFILE" >/dev/null 2>&1; then
       ok "created via CLI with storage root"
@@ -66,7 +66,7 @@ for c in json.load(sys.stdin):
       # Path 3 — SQL. Blocked by quota rather than by policy, so this is the
       # one to retry tomorrow.
       SQL_OUT=$(databricks experimental aitools tools query \
-        "CREATE CATALOG IF NOT EXISTS ${CATALOG} COMMENT 'Formula 1 Race Intelligence capstone'" \
+        "CREATE CATALOG IF NOT EXISTS ${CATALOG} COMMENT 'Formula 1 Race Intelligence platform'" \
         --profile "$PROFILE" 2>&1 || true)
 
       if catalog_exists; then

@@ -816,41 +816,7 @@ outlive it.
 | Changing a dataset type in place | A Silver fact moving between materialised view and streaming table | **Cannot be done in place, and a full refresh does not help.** Drop the table manually or rename the dataset |
 | A serverless `spark_python_task` is not a normal Python process | Writing a new job task | `__file__` is undefined, custom `spark.conf` keys raise `CONFIG_NOT_AVAILABLE`, and any `SystemExit` fails the task — including `SystemExit(0)`. All three report as "Workload failed, see run output for details", which names none of them |
 
-## 15. Criteria coverage
-
-Assessed against the technical-execution minimum criteria.
-
-| Criterion | Status | Where |
-|---|---|---|
-| Data ingestion into raw storage | **Met** | `src/ingestion/`, orchestrated job, UC Volume |
-| Transformation in phases | **Met** | Bronze / Silver / Gold, Lakeflow Declarative Pipeline |
-| Layered architecture framework | **Met** | Medallion |
-| Pipeline architecture pattern | **Met** | Batch, single path — §3 |
-| Incremental processing | **Met** | Streaming tables + Auto Loader; incremental MV refresh — §5.1 |
-| Change data capture | **Met** | Auto CDC SCD Type 2 on both dimensions; natural-key dedupe on facts — §5.3 |
-| Change tracking for consumers | **Partial** | CDF is unsupported on materialised views, which is where the facts live. SCD-2 gives version history on dimensions — §5.4 |
-| Serving model paradigm | **Met** | Silver star schema, Gold OBT marts |
-| Semantic model consistency | **Met** | Mart columns plus `driver_metrics`, a governed UC metric view — §6 |
-| Access-pattern-aware design | **Met** | Clustering, materialisation, denormalisation — §6 |
-| Orchestration | **Met** | Lakeflow Jobs, task dependency, schedule |
-| Containerisation | **N/A** | Serverless with declared environments — §12 |
-| Data quality checks | **Met** | Expectations, 9 quarantine tables, executable validation — §9 |
-| Unit test for transformation logic | **Met** | 224 local tests + Spark tests on the pipeline's own parsers — §12 |
-| Serving layer accessible downstream | **Met** | Gold via SQL warehouse, AI/BI dashboard |
-| Ingestion/processing failure handling | **Met** | §8 |
-| Malformed files, missing values | **Met** | §8 |
-| Duplicate records | **Met** | Dedupe in every `stg_*` |
-| Schema evolution | **Met** | Text Bronze, explicit Silver — §5.2 |
-| Backfilling mechanism | **Met** | `--mode backfill` |
-| Structured logs, status, duration | **Met** | §9 |
-| Monitoring | **Met** | Event log queryable, run history, failure email on both jobs — §9 |
-| Public / licensed data | **Met** | §10 |
-| Secure credential handling | **Met (vacuous)** | No credentials exist — §10 |
-| Least-privilege access | **Met** | Applied grants, narrowing by layer — §10 |
-| PII handling | **N/A** | No PII in the data |
-| Lineage and documentation | **Met** | UC lineage, row-level provenance, this document |
-
-### Gaps to close
+## 15. Known limitations
 
 1. **Amendment history on the facts.** Not a missing property: CDF is
    unsupported on materialised views, and the Silver facts are materialised

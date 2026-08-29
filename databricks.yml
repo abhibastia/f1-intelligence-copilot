@@ -1,17 +1,17 @@
 # Declarative Automation Bundle for the F1 Intelligence Copilot.
 #
-# This bundle merges two capstones into one platform:
-#   - formula1-capstone-project contributed the governed medallion pipeline
-#     (src/), the AI/BI dashboard, and Genie — the resources below that touch
+# This bundle merges two originally-separate projects into one platform:
+#   - the governed medallion pipeline contributed the pipeline itself (src/),
+#     the AI/BI dashboard, and Genie — the resources below that touch
 #     ingestion, the pipeline and the dashboard are that project's, unmodified
 #     in shape.
-#   - f1-strategy-copilot contributed the Lakebase serving layer, the RAG
-#     agent, the MCP server app and the Change Data Feed analytics loop —
-#     f1_jobs.yml is that project's job definitions.
+#   - the Lakebase serving layer contributed the RAG agent, the MCP server app
+#     and the Change Data Feed analytics loop — f1_jobs.yml is that project's
+#     job definitions.
 #
 # Merging the two also seeded three extra Gold marts into Lakebase —
 # race_strategy, lap_pace, constructor_standings — and replaced a second,
-# independent local Open-Meteo fetch the standalone copilot used to make for
+# independent local Open-Meteo fetch the Lakebase side used to make for
 # weather with a seed straight from the governed race_conditions mart.
 #
 # What this bundle does NOT own: the catalog, the schemas, the landing Volume,

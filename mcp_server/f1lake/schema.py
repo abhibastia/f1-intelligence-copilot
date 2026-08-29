@@ -41,8 +41,8 @@ from pg8000 import dbapi
 _SCOPE = os.environ.get("LAKEBASE_SECRET_SCOPE", "database")
 _KEY = os.environ.get("LAKEBASE_SECRET_KEY", "lakebase-url")
 
-# all-MiniLM-L6-v2. Must match the embedding model and the VECTOR(n) column;
-# pgvector rejects an insert whose dimensionality differs from the column.
+# BAAI/bge-small-en-v1.5. Must match the embedding model and the VECTOR(n)
+# column; pgvector rejects an insert whose dimensionality differs from the column.
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "384"))
 
 DOCUMENTS = "f1_documents"

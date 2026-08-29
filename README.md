@@ -411,9 +411,9 @@ detail — including the guardrail examples — in
 
 ## 7. Unstructured data and retrieval
 
-Wikipedia race reports, chunked and embedded (`all-MiniLM-L6-v2`, 384-dim) in
-Lakebase `pgvector`, HNSW with `vector_cosine_ops` to match the `<=>` operator
-used at query time.
+Wikipedia race reports, chunked and embedded (`BAAI/bge-small-en-v1.5`,
+384-dim) in Lakebase `pgvector`, HNSW with `vector_cosine_ops` to match the
+`<=>` operator used at query time.
 
 Wired into queries in `f1_broker.search_reports`, which joins each hit to that
 race's measured weather — sourced from Gold's `race_conditions` mart, not a

@@ -22,6 +22,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 
 from f1lake import embedder, schema
 from f1lake.schema import execute_values
@@ -29,22 +30,20 @@ from f1lake.schema import execute_values
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("load")
 
-# Race-report sections run from a two-line summary to several thousand
-# characters. 900/150 keeps a chunk inside the model's 256-token window with
-# enough overlap that a sentence straddling a boundary stays retrievable from
-# both sides.
-CHUNK_SIZE = 900
-CHUNK_OVERLAP = 150
+# Race-report sentences run ~100-250 chars. 900 chars routinely packed 4-7
+# unrelated sentences into one vector - e.g. a driver's first Grand Prix win
+# sharing a chunk with an unrelated team milestone and a podium streak, which
+# diluted the embedding away from any single one of them. 400/80 keeps a
+# chunk to roughly 2-3 sentences, with enough overlap that a sentence near a
+# boundary stays retrievable from both sides.
+CHUNK_SIZE = 400
+CHUNK_OVERLAP = 80
+
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 
 
-def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
-    """Split text into overlapping windows."""
-    text = (text or "").strip()
-    if not text:
-        return []
-    if len(text) <= size:
-        return [text]
-
+def _hard_split(text: str, size: int, overlap: int) -> list[str]:
+    """Character-window split for a unit with no sentence boundary to split on."""
     step = size - overlap
     chunks = []
     for start in range(0, len(text), step):
@@ -53,6 +52,60 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
             chunks.append(piece)
         if start + size >= len(text):
             break
+    return chunks
+
+
+def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
+    """Split text into overlapping windows, packing whole sentences.
+
+    A fixed character window can cut a sentence in half, or just as easily
+    cram several unrelated sentences into one vector - diluting whichever one
+    a query is actually looking for. Packing whole sentences up to `size`
+    means the unit a query matches against is never smaller or more mixed
+    than a sentence.
+    """
+    text = (text or "").strip()
+    if not text:
+        return []
+    if len(text) <= size:
+        return [text]
+
+    sentences = [s for s in _SENTENCE_SPLIT.split(text) if s]
+    if len(sentences) <= 1:
+        # No punctuation to split on (a URL, a run-on string) - the
+        # character-window split is the only thing that can make progress.
+        return _hard_split(text, size, overlap)
+
+    chunks: list[str] = []
+    current: list[str] = []
+    for sentence in sentences:
+        if len(sentence) > size:
+            # One sentence alone exceeds the budget - flush what's pending,
+            # then hard-split just this sentence rather than losing it.
+            if current:
+                chunks.append(" ".join(current))
+                current = []
+            chunks.extend(_hard_split(sentence, size, overlap))
+            continue
+
+        candidate = current + [sentence]
+        if current and len(" ".join(candidate)) > size:
+            chunks.append(" ".join(current))
+            # Carry back trailing sentences covering at least `overlap`
+            # chars, so the next chunk overlaps by whole sentences rather
+            # than a raw character cut.
+            carry: list[str] = []
+            carry_len = 0
+            for prev in reversed(current):
+                carry.insert(0, prev)
+                carry_len += len(prev)
+                if carry_len >= overlap:
+                    break
+            current = [*carry, sentence]
+        else:
+            current = candidate
+    if current:
+        chunks.append(" ".join(current))
     return chunks
 
 

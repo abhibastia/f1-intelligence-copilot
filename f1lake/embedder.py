@@ -19,9 +19,20 @@ import threading
 
 logger = logging.getLogger("embedder")
 
-MODEL_NAME = os.environ.get("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+MODEL_NAME = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "384"))
 _CACHE_DIR = os.environ.get("SENTENCE_TRANSFORMERS_HOME", "/tmp/.cache/huggingface")
+
+# BGE's retrieval quality depends on this: queries get the instruction below,
+# passages never do. Mixing the two up is the standard way to lose quality
+# with these models without ever seeing an error. Gated on the model name so
+# swapping to a non-BGE model later doesn't silently keep prepending it.
+QUERY_INSTRUCTION = os.environ.get(
+    "EMBEDDING_QUERY_INSTRUCTION",
+    "Represent this sentence for searching relevant passages: "
+    if "bge" in MODEL_NAME.lower()
+    else "",
+)
 
 _model = None
 _lock = threading.Lock()
@@ -55,7 +66,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def embed_query(text: str) -> list[float]:
-    return embed_texts([text])[0]
+    return embed_texts([QUERY_INSTRUCTION + text])[0]
 
 
 def to_pgvector(vector: list[float]) -> str:

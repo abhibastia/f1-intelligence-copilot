@@ -2,8 +2,9 @@
 
 This was assumed impossible on Free Edition serverless, on the basis of a
 day-2 notebook that was memory-killed loading sentence-transformers. That
-conclusion was never retested for this model: all-MiniLM-L6-v2 is roughly 90 MB
-and loads fine. Probed before wiring it up, and the probe succeeded.
+conclusion was never retested for a small model: both all-MiniLM-L6-v2 and its
+successor BAAI/bge-small-en-v1.5 are well under 150 MB and load fine. Probed
+before wiring it up, and the probe succeeded.
 
 Incremental by default - only documents with no embeddings are processed - so a
 re-run after new race reports is cheap.

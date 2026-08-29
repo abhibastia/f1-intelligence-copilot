@@ -17,7 +17,7 @@ env:
   # Must match the model that built the embeddings; the search box embeds the
   # query with it. 384 dimensions.
   - name: EMBEDDING_MODEL
-    value: "sentence-transformers/all-MiniLM-L6-v2"
+    value: "BAAI/bge-small-en-v1.5"
   - name: HF_HOME
     value: "/tmp/.cache/huggingface"
   - name: SENTENCE_TRANSFORMERS_HOME

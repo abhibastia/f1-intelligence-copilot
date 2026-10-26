@@ -8,7 +8,11 @@ on:
 
 jobs:
   pytest:
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: the floating label began migrating to
+    # Ubuntu 26 on 2026-10-19, and a runner image that changes under you turns
+    # an unrelated push into a debugging session. Needs a deliberate bump when
+    # 24.04 nears end of support - a stale pin is the cost of a stable one.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 

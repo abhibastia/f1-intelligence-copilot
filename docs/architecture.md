@@ -104,7 +104,7 @@ AI/BI Dashboard + Genie agent
 | Silver dimensions | 3 | `dim_driver` and `dim_constructor` SCD-2; `dim_race` an MV |
 | Silver quarantine | 9 | one per fact |
 | Gold marts | 6 | + the pipeline event log |
-| Dashboard pages | 5 | driver form · constructors · circuits · championship · trust |
+| Dashboard pages | 7 | standings · driver form · constructors · circuits · championship swing · trust · assistant activity |
 
 There is no `dim_circuit` and no separate `circuits` endpoint: circuit identity
 and coordinates arrive inside the races payload, so a fourth dimension would
@@ -608,6 +608,7 @@ The dashboard has one page per analyst decision rather than one page per mart:
 | Circuit Priors | what usually works here | `typical_stops`, `overtaking_index`, `pole_to_win_pct` |
 | Championship Swing | which rounds decided it | `gap_to_leader`, `points_gained_in_round` |
 | Trust | can these numbers be believed | expectations passed/failed |
+| Assistant Activity | what the copilot is actually doing | tool calls, writes, errors, latency per tool |
 
 A metric earns its place on a page by the question it answers, not by which mart
 it came from — which is why race pace appears under driver form and reliability
@@ -734,7 +735,7 @@ slow drift below that threshold is invisible.
 
 Three layers, each catching what the others cannot.
 
-**Local, no Spark, under a second** — `pytest`, 224 tests:
+**Local, no Spark, under a second** — `pytest`, 256 tests:
 
 - Ingestion logic: pagination against a `total` that counts inner records,
   the rate budget, the race-calendar parse, `should_write`'s closed-round
@@ -783,17 +784,20 @@ nothing.
   declared environment specs; the reproducibility that Docker would provide is
   already provided by the bundle and the environment definition. A container
   would add a build step and an image registry for no gain.
-- **Embeddings, vector search, an operational serving database, or an agent.**
-  A separate project explores that direction. This one answers questions with
-  SQL over a dashboard, and keeping it that way is what makes it maintainable.
+- **Embeddings, vector search, an operational serving database, and the agent
+  itself** are out of scope *for this document*, not for the platform. They
+  were a separate project that has since been merged into this repository; the
+  design record for them is [`copilot_design.md`](copilot_design.md). This
+  document stops at Gold and the two surfaces that read it directly — the
+  dashboard and Genie.
 
-  That separate project left two tables behind in this catalog:
-  `f1.gold.agent_activity_analytics` and `f1.gold.agent_tool_calls`. They are
-  **not part of this platform** — no pipeline here writes them, no dashboard
-  reads them, and `validate_marts.py` ignores them. They are kept because that
-  work resumes later. Browsing `f1.gold` therefore shows eight objects where
-  this document describes five marts and an event log; those two are the
-  difference.
+  The seam between the two halves is visible in this catalog as
+  `f1.gold.agent_tool_calls` and `f1.gold.agent_activity_analytics`. No
+  pipeline described here writes them and `validate_marts.py` ignores them:
+  they are written by the agent into Lakebase and carried into Delta by the
+  Change Data Feed job (`notebooks/cdf_agent_analytics.py`), which is the one
+  place the copilot half writes back into `f1.gold`. Browsing the schema
+  therefore shows more objects than the marts and event log described here.
 
   One consequence to carry forward: `SELECT` is granted on the `f1.gold`
   *schema*, and Unity Catalog has no `DENY`, so any principal that can read the

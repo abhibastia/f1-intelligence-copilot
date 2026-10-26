@@ -284,9 +284,11 @@ def main() -> int:
 
     print("\nNot checked here — need Spark/warehouse, spot-check by hand:")
     print(
-        '  README.md               "150 driver-races ... 232 ahead" (pace vs. finish, driver_performance + lap_pace)'
+        '  README.md               "1,200 driver-race results across 59 completed rounds" (§1 At a glance)'
     )
-    print('  README.md               "0.69 places ... 0.40" (strategy finding, race_strategy)')
+    print(
+        '  README.md               "2,665 prose chunks" (§1 At a glance, §7 — count rows in f1_embeddings)'
+    )
     print(
         "  README.md / CLAUDE.md   dim_driver SCD-2 history (versions / drivers / historical rows) —"
     )

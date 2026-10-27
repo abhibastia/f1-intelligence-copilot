@@ -181,68 +181,53 @@ than a per-turn cost.
 
 ## 5. Engineering highlights
 
-The problems that took the longest to find, and what each one changed. All are
-documented in-repo — this section just surfaces them.
+Six things here that are hard to get right, each with the evidence it works.
+Full reasoning in `CLAUDE.md` and [`docs/copilot_design.md`](docs/copilot_design.md) §12.
 
-**1. Diluted retrieval, measured and fixed.** A "first win for a driver" search
-kept returning championship-title passages instead of maiden-win stories. The
-chunker was a naive 900-character window that routinely packed 4–7 unrelated
-sentences into a single vector, pulling the embedding away from any one of them
-— the correct answer ranked **281st of 1,108** by cosine similarity. Switching
-to sentence-aware packing (400/80, whole-sentence overlap) and from
-`all-MiniLM-L6-v2` to `BAAI/bge-small-en-v1.5` — still 384-dim, so no schema
-migration — took the top score to **0.73 from 0.58** with genuine matches in
-the top 5 instead of zero. Caught mid-verification: both `app.yaml` files
-pinned the *old* model name as an app env var, so the deployed apps were
-embedding queries with MiniLM against a bge-small index. Two incompatible
-vector spaces produce no error at all — just uniformly low, meaningless scores.
+**1. Measuring retrieval quality rather than assuming it.** A naive 900-char
+chunker packed 4–7 unrelated sentences per vector, burying the right answer for
+"first win for a driver" at **rank 281 of 1,108**. Sentence-aware packing
+(400/80) plus `BAAI/bge-small-en-v1.5` over `all-MiniLM-L6-v2` — both 384-dim,
+so no migration — moved the top score to **0.73 from 0.58**. Verification caught
+a second fault: both `app.yaml` files still pinned the old model, so deployed
+apps embedded queries with MiniLM against a bge-small index. Mismatched vector
+spaces raise no error; they return uniformly low scores. Hence measuring.
 
-**2. A generic job crash that was really an ABI collision.** `import psycopg2`
-SIGABRTs deterministically inside a Databricks serverless `spark_python_task`:
-pandas, pyarrow and grpc have already loaded native extensions into the
-process, and `psycopg2-binary`'s bundled OpenSSL collides with them. It worked
-in local dev *and* in the Databricks Apps runtime, so it stayed hidden until
-harvest and seed ran as real jobs — behind the generic message "Python process
-exited unexpectedly". The same crash had been misread as a *separate*, unsolved
-problem for a while ("fails via bundle-run, works via jobs submit"), because
-nobody had opened the driver logs. Fixed by moving to pure-Python `pg8000`
-everywhere Lakebase is reached, which makes the whole class of crash impossible.
+**2. Diagnosing a native-extension crash behind a generic error.** `import psycopg2` SIGABRTs inside a Databricks serverless `spark_python_task`: pandas, pyarrow and grpc have
+already loaded native extensions and `psycopg2-binary`'s bundled OpenSSL
+collides with them. It works locally *and* in the Apps runtime, surfacing only
+in a real job as "Python process exited unexpectedly" — and sat filed as a
+separate unsolved bug until someone read the driver logs. Pure-Python `pg8000`
+makes the class of crash impossible rather than patched.
 
-**3. Writes that reported success and silently rolled back.** An
-`INSERT … RETURNING` run through the read helper looks entirely successful — it
-hands back a real row with a real id — but never commits, so the row does not
-survive the connection closing. An agent would tell a user "saved" and the
-database would disagree. The only thing that catches it is reading back **on a
-new connection**, which `f1lake.schema.smoke_test()` now does on purpose.
+**3. Verifying persistence on a second connection.** `INSERT … RETURNING` via
+the read helper returns a real row with a real id, then never commits — the
+agent reports "saved" and the database disagrees. Only a read-back on a **new**
+connection catches it, which is what `f1lake.schema.smoke_test()` does.
 
-**4. Sprint points are part of the championship.** Summing only race points
-left **13 of 24** drivers short of their official season total. Adding sprint
-points reconciles **0 of 24** mismatches against an independently-fetched
-standings endpoint — two different sources agreeing, rather than a comparison
-against a number typed in from memory.
+**4. Reconciling against an independent source.** Points summed from race
+results alone leave **13 of 24** drivers short of their official total; adding
+sprint points reconciles to **0 of 24** against a separately fetched standings
+endpoint.
 
-**5. CDF analytics double-counted, then hit a VACUUM wall.** Filtering
-`_change_type` stops double-counting *within* a run but not *across* runs: the
-MERGE rewrites matched rows, emitting a fresh `update_postimage` every time, so
-after three runs the analytics claimed **235 calls against 157 rows**. Fixed
-with a `row_number()` over `_commit_version`. Separately, a pinned
-`startingVersion=1` eventually failed with
-`DELTA_UNSUPPORTED_TIME_TRAVEL_BEYOND_DELETED_FILE_RETENTION_DURATION` — a
-VACUUM boundary at 168 hours, not a CDF limitation. The notebook now catches
-that specific error and restarts from the table's current version, because the
-changes in an expired window are physically gone, not recoverable.
+**5. Incremental analytics that stay correct across runs.** Filtering
+`_change_type` stops double-counting within a Change Data Feed run but not
+across them: the MERGE rewrites matched rows and re-emits `update_postimage`
+each time, so after three runs the analytics claimed **235 calls against 157
+rows**. A `row_number()` over `_commit_version` fixes it. A pinned
+`startingVersion=1` separately fails once files age out
+(`DELTA_UNSUPPORTED_TIME_TRAVEL_BEYOND_DELETED_FILE_RETENTION_DURATION`) — a
+VACUUM boundary at 168 hours, not a CDF limit — so the job restarts from the current version,
+because changes in an expired window are gone, not recoverable.
 
-**6. Dimensions joined as-of the race, never as-of now.** Gold joins
-`dim_driver` and `dim_constructor` at `race_date`. A current-row join silently
-reattributes historical results to a driver's present team — a wrong answer
-that looks completely plausible. Validation check 14 proves the as-of join does
-real work by reconciling published constructor standings against driver results
-summed by as-of-race team, which would be a tautology if both came from one
-source. `dim_driver` is also built from the *results* endpoint rather than
-`/drivers`, because every field `/drivers` returns is static: the attribute that
-actually changes is the constructor, and it only exists in results.
-
----
+**6. Temporal joins that survive a driver changing team.** Gold joins
+`dim_driver` and `dim_constructor` as of `race_date`, never the current row,
+which would silently reattribute historical results to a driver's present team
+— a wrong answer that looks plausible. Validation check 14 proves the join does
+real work by reconciling published constructor standings against results summed
+by as-of-race team, a tautology if both came from one source. `dim_driver` is
+built from *results*, not `/drivers`, for the same reason: every `/drivers`
+field is static, so the only attribute with history is the constructor.
 
 ## 6. The agent
 
